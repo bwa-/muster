@@ -121,7 +121,7 @@
 //
 // ## Standard Application Startup
 //
-//	cfg := app.NewConfig(false, true, false, "")  // TUI mode, debug enabled
+//	cfg := app.NewConfig(false, true, false, "", false)  // TUI mode, debug enabled
 //	application, err := app.NewApplication(cfg)
 //	if err != nil {
 //	    return fmt.Errorf("bootstrap failed: %w", err)
@@ -130,7 +130,7 @@
 //
 // ## CLI Mode with Custom Configuration
 //
-//	cfg := app.NewConfig(true, false, false, "/opt/muster/config")
+//	cfg := app.NewConfig(true, false, false, "/opt/muster/config", true)
 //	application, err := app.NewApplication(cfg)
 //	if err != nil {
 //	    return fmt.Errorf("bootstrap failed: %w", err)
@@ -139,7 +139,7 @@
 //
 // ## Debug Mode for Development
 //
-//	cfg := app.NewConfig(false, true, true, "")  // TUI, debug, yolo mode
+//	cfg := app.NewConfig(false, true, true, "", false)  // TUI, debug, yolo mode
 //	application, err := app.NewApplication(cfg)
 //	if err != nil {
 //	    return fmt.Errorf("bootstrap failed: %w", err)

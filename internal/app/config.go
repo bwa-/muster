@@ -35,6 +35,10 @@ type Config struct {
 	// When empty, uses standard layered configuration loading strategy.
 	ConfigPath string
 
+	// ConfigPathExplicit indicates if the config path was explicitly set by the user.
+	// If true, the application will fail if the configuration cannot be loaded from ConfigPath.
+	ConfigPathExplicit bool
+
 	// MusterConfig holds the loaded muster environment configuration.
 	// This field is populated during application bootstrap after configuration loading.
 	MusterConfig *config.MusterConfig
@@ -49,21 +53,23 @@ type Config struct {
 //   - silent: disables all output to the console
 //   - yolo: enables relaxed safety checks and reduced confirmations
 //   - configPath: custom config directory (empty string for default layered loading)
+//   - configPathExplicit: whether configPath was explicitly set by user
 //
 // Returns a fully initialized Config struct ready for use with NewApplication.
 //
 // Example:
 //
 //	// Standard mode with debug enabled
-//	cfg := app.NewConfig(true, false, false, "")
+//	cfg := app.NewConfig(true, false, false, "", false)
 //
 //	// Custom configuration path
-//	cfg := app.NewConfig(false, false, false, "/opt/muster/config")
-func NewConfig(debug, silent, yolo bool, configPath string) *Config {
+//	cfg := app.NewConfig(false, false, false, "/opt/muster/config", true)
+func NewConfig(debug, silent, yolo bool, configPath string, configPathExplicit bool) *Config {
 	return &Config{
-		Debug:      debug,
-		Silent:     silent,
-		Yolo:       yolo,
-		ConfigPath: configPath,
+		Debug:              debug,
+		Silent:             silent,
+		Yolo:               yolo,
+		ConfigPath:         configPath,
+		ConfigPathExplicit: configPathExplicit,
 	}
 }

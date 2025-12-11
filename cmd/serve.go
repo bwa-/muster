@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"muster/internal/app"
 	"muster/internal/config"
@@ -63,8 +64,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid configuration path '%s': %w", serveConfigPath, err)
 	}
 
+	configPathExplicit := false
+	// Check for environment variable if flag not changed
+	if !cmd.Flags().Changed("config-path") {
+		if envPath := os.Getenv("MUSTER_CONFIG_PATH"); envPath != "" {
+			serveConfigPath = envPath
+			configPathExplicit = true
+		}
+	} else {
+		configPathExplicit = true
+	}
+
 	// Create application configuration without cluster arguments
-	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath)
+	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath, configPathExplicit)
 
 	// Create and initialize the application
 	application, err := app.NewApplication(cfg)

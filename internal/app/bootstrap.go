@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"muster/internal/config"
 	"muster/pkg/logging"
@@ -20,7 +21,7 @@ import (
 //
 // Example usage:
 //
-//	cfg := app.NewConfig(false, true, false, "")  // TUI mode, debug enabled
+//	cfg := app.NewConfig(false, true, false, "", false)  // TUI mode, debug enabled
 //	app, err := app.NewApplication(cfg)
 //	if err != nil {
 //	    return fmt.Errorf("failed to create application: %w", err)
@@ -48,7 +49,7 @@ type Application struct {
 //
 // Example:
 //
-//	cfg := app.NewConfig(true, false, false, "/custom/config")  // CLI mode, custom config
+//	cfg := app.NewConfig(true, false, false, "/custom/config", true)  // CLI mode, custom config
 //	app, err := app.NewApplication(cfg)
 //	if err != nil {
 //	    log.Fatalf("Bootstrap failed: %v", err)
@@ -74,6 +75,14 @@ func NewApplication(cfg *Config) (*Application, error) {
 
 	if cfg.ConfigPath == "" {
 		panic("Logic error: empty ConfigPath")
+	}
+
+	// If config path was explicitly set, verify it exists
+	if cfg.ConfigPathExplicit {
+		configFilePath := filepath.Join(cfg.ConfigPath, "config.yaml")
+		if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("configuration file not found at %s (explicitly requested)", configFilePath)
+		}
 	}
 
 	musterCfg, err = config.LoadConfig(cfg.ConfigPath)

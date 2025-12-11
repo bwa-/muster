@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.66] - 2025-12-11
+
 ### Added
 - **Systemd Socket Activation Support**
   - Added `muster.socket` unit file for socket-activated systemd deployment
