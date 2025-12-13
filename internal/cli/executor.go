@@ -69,12 +69,17 @@ func NewToolExecutor(options ExecutorOptions) (*ToolExecutor, error) {
 	logger := agent.NewLogger(false, false, false)
 
 	if options.ConfigPath == "" {
-		return nil, fmt.Errorf("Logic error: empty tool executor ConfigPath")
+		return nil, fmt.Errorf("configuration path is required")
+	}
+
+	// Validate config path before attempting to load
+	if err := config.ValidateConfigPath(options.ConfigPath); err != nil {
+		return nil, fmt.Errorf("invalid configuration path '%s': %w", options.ConfigPath, err)
 	}
 
 	cfg, err := config.LoadConfig(options.ConfigPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load configuration from '%s': %w", options.ConfigPath, err)
 	}
 
 	transport := agent.TransportType(cfg.Aggregator.Transport)

@@ -176,9 +176,13 @@ func init() {
 	rootCmd.AddCommand(getCmd)
 
 	// Add flags to the command
-	getCmd.PersistentFlags().StringVarP(&getOutputFormat, "output", "o", "table", "Output format (table, json, yaml)")
+	defaultOutputFormat := config.GetOutputFormatFromEnv("table")
+	getCmd.PersistentFlags().StringVarP(&getOutputFormat, "output", "o", defaultOutputFormat, "Output format (table, json, yaml) (env: MUSTER_OUTPUT_FORMAT)")
 	getCmd.PersistentFlags().BoolVarP(&getQuiet, "quiet", "q", false, "Suppress non-essential output")
-	getCmd.PersistentFlags().StringVar(&getConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+	
+	// Config path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	getCmd.PersistentFlags().StringVar(&getConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
 }
 
 func runGet(cmd *cobra.Command, args []string) error {

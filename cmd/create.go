@@ -109,13 +109,18 @@ func init() {
 	rootCmd.AddCommand(createCmd)
 
 	// Add flags to the command
-	createCmd.PersistentFlags().StringVarP(&createOutputFormat, "output", "o", "table", "Output format (table, json, yaml)")
+	defaultOutputFormat := config.GetOutputFormatFromEnv("table")
+	createCmd.PersistentFlags().StringVarP(&createOutputFormat, "output", "o", defaultOutputFormat, "Output format (table, json, yaml) (env: MUSTER_OUTPUT_FORMAT)")
 	createCmd.PersistentFlags().BoolVarP(&createQuiet, "quiet", "q", false, "Suppress non-essential output")
-	createCmd.PersistentFlags().StringVar(&createConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+	
+	// Config path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	createCmd.PersistentFlags().StringVar(&createConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
 }
 
 // parseServiceParameters extracts service parameters from raw command line arguments
 // Looks for --param=value or --param value patterns after the service class name
+// Properly excludes known CLI flags like --output, --quiet, --config-path
 func parseServiceParameters(serviceClassName string) map[string]interface{} {
 	params := make(map[string]interface{})
 
@@ -137,6 +142,15 @@ func parseServiceParameters(serviceClassName string) map[string]interface{} {
 	// Parse arguments after the service class name
 	serviceArgs := args[serviceClassIndex+1:]
 
+	// Known CLI flags that should not be treated as service parameters
+	knownFlags := map[string]bool{
+		"output":      true,
+		"o":           true,
+		"quiet":       true,
+		"q":           true,
+		"config-path": true,
+	}
+
 	for i := 0; i < len(serviceArgs); i++ {
 		arg := serviceArgs[i]
 
@@ -144,11 +158,15 @@ func parseServiceParameters(serviceClassName string) map[string]interface{} {
 		if strings.HasPrefix(arg, "--") {
 			paramArg := strings.TrimPrefix(arg, "--")
 
-			// Skip known flags
-			if paramArg == "output" || paramArg == "quiet" ||
-				strings.HasPrefix(paramArg, "output=") ||
-				strings.HasPrefix(paramArg, "quiet=") {
-				// Skip this and potentially next argument
+			// Extract the flag name (before = if present)
+			flagName := paramArg
+			if idx := strings.Index(paramArg, "="); idx > 0 {
+				flagName = paramArg[:idx]
+			}
+
+			// Skip known CLI flags
+			if knownFlags[flagName] {
+				// Skip this and potentially next argument if not using = format
 				if !strings.Contains(paramArg, "=") && i+1 < len(serviceArgs) && !strings.HasPrefix(serviceArgs[i+1], "--") {
 					i++ // Skip the value too
 				}
