@@ -59,7 +59,7 @@ Configuration:
 // runServe is the main entry point for the serve command
 func runServe(cmd *cobra.Command, args []string) error {
 	// Create application configuration without cluster arguments
-	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath)
+	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath, cmd.Root().Version)
 
 	// Create and initialize the application
 	application, err := app.NewApplication(cfg)
