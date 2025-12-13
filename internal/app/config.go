@@ -42,6 +42,10 @@ type Config struct {
 	// MusterConfig holds the loaded muster environment configuration.
 	// This field is populated during application bootstrap after configuration loading.
 	MusterConfig *config.MusterConfig
+
+	// Version is the application version string (e.g., "0.0.68").
+	// Typically injected at build time via -ldflags.
+	Version string
 }
 
 // NewConfig creates a new application configuration with the specified settings.
@@ -54,22 +58,24 @@ type Config struct {
 //   - yolo: enables relaxed safety checks and reduced confirmations
 //   - configPath: custom config directory (empty string for default layered loading)
 //   - configPathExplicit: whether configPath was explicitly set by user
+//   - version: application version string (e.g., "0.0.68")
 //
 // Returns a fully initialized Config struct ready for use with NewApplication.
 //
 // Example:
 //
 //	// Standard mode with debug enabled
-//	cfg := app.NewConfig(true, false, false, "", false)
+//	cfg := app.NewConfig(true, false, false, "", false, "0.0.68")
 //
 //	// Custom configuration path
-//	cfg := app.NewConfig(false, false, false, "/opt/muster/config", true)
-func NewConfig(debug, silent, yolo bool, configPath string, configPathExplicit bool) *Config {
+//	cfg := app.NewConfig(false, false, false, "/opt/muster/config", true, "0.0.68")
+func NewConfig(debug, silent, yolo bool, configPath string, configPathExplicit bool, version string) *Config {
 	return &Config{
 		Debug:              debug,
 		Silent:             silent,
 		Yolo:               yolo,
 		ConfigPath:         configPath,
 		ConfigPathExplicit: configPathExplicit,
+		Version:            version,
 	}
 }

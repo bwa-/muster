@@ -6,45 +6,55 @@ import (
 
 func TestNewConfig(t *testing.T) {
 	tests := []struct {
-		name       string
-		silent     bool
-		debug      bool
-		yolo       bool
-		configPath string
+		name               string
+		silent             bool
+		debug              bool
+		yolo               bool
+		configPath         string
+		configPathExplicit bool
+		version            string
 	}{
 		{
-			name:       "full configuration",
-			silent:     true,
-			debug:      true,
-			yolo:       true,
-			configPath: "/custom/config/path",
+			name:               "full configuration",
+			silent:             true,
+			debug:              true,
+			yolo:               true,
+			configPath:         "/custom/config/path",
+			configPathExplicit: true,
+			version:            "0.0.68",
 		},
 		{
-			name:       "minimal configuration",
-			debug:      false,
-			silent:     false,
-			yolo:       false,
-			configPath: "",
+			name:               "minimal configuration",
+			debug:              false,
+			silent:             false,
+			yolo:               false,
+			configPath:         "",
+			configPathExplicit: false,
+			version:            "0.0.1",
 		},
 		{
-			name:       "debug only",
-			silent:     false,
-			debug:      true,
-			yolo:       false,
-			configPath: "",
+			name:               "debug only",
+			silent:             false,
+			debug:              true,
+			yolo:               false,
+			configPath:         "",
+			configPathExplicit: false,
+			version:            "test",
 		},
 		{
-			name:       "with custom config path",
-			silent:     false,
-			debug:      false,
-			yolo:       false,
-			configPath: "/test/config",
+			name:               "with custom config path",
+			silent:             false,
+			debug:              false,
+			yolo:               false,
+			configPath:         "/test/config",
+			configPathExplicit: true,
+			version:            "1.2.3",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := NewConfig(tt.debug, tt.silent, tt.yolo, tt.configPath)
+			cfg := NewConfig(tt.debug, tt.silent, tt.yolo, tt.configPath, tt.configPathExplicit, tt.version)
 
 			if cfg.Debug != tt.debug {
 				t.Errorf("Debug = %v, want %v", cfg.Debug, tt.debug)
@@ -57,6 +67,12 @@ func TestNewConfig(t *testing.T) {
 			}
 			if cfg.ConfigPath != tt.configPath {
 				t.Errorf("ConfigPath = %v, want %v", cfg.ConfigPath, tt.configPath)
+			}
+			if cfg.ConfigPathExplicit != tt.configPathExplicit {
+				t.Errorf("ConfigPathExplicit = %v, want %v", cfg.ConfigPathExplicit, tt.configPathExplicit)
+			}
+			if cfg.Version != tt.version {
+				t.Errorf("Version = %v, want %v", cfg.Version, tt.version)
 			}
 			if cfg.MusterConfig != nil {
 				t.Error("MusterConfig should be nil before loading")
