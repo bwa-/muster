@@ -76,7 +76,7 @@ func init() {
 	defaultOutputFormat := config.GetOutputFormatFromEnv("table")
 	checkCmd.PersistentFlags().StringVarP(&checkOutputFormat, "output", "o", defaultOutputFormat, "Output format (table, json, yaml) (env: MUSTER_OUTPUT_FORMAT)")
 	checkCmd.PersistentFlags().BoolVarP(&checkQuiet, "quiet", "q", false, "Suppress non-essential output")
-	
+
 	// Config path flag with environment variable support
 	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
 	checkCmd.PersistentFlags().StringVar(&checkConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")

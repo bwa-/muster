@@ -89,7 +89,7 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveDebug, "debug", false, "Enable general debug logging")
 	serveCmd.Flags().BoolVar(&serveSilent, "silent", false, "Disable all output to the console")
 	serveCmd.Flags().BoolVar(&serveYolo, "yolo", false, "Disable denylist for destructive tool calls (use with caution)")
-	
+
 	// Config path flag with environment variable support
 	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
 	serveCmd.Flags().StringVar(&serveConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")

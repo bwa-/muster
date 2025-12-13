@@ -1,0 +1,53 @@
+apiVersion: muster.giantswarm.io/v1alpha1
+kind: Workflow
+metadata:
+  name: agent-initialization
+  namespace: default
+spec:
+  description: "Universal agent initialization: health check, search memory, query docs before work begins"
+  
+  args:
+    research_query:
+      type: string
+      required: true
+      description: "Topic/question derived from user's request (after reading context files)"
+    
+    skip_docs:
+      type: boolean
+      default: false
+      description: "Skip docs search for pure governance tasks (no technical content)"
+  
+  steps:
+    # ============================================================================
+    # STEP 1: Infrastructure health check
+    # ============================================================================
+    #
+    #- id: health_check
+    #  description: "Verify memory and docs servers are online"
+    #  tool: workflow_memory-health-check
+    #  outputs:
+    #    infrastructure_status: "{{.status}}"
+    #  store: true
+    #
+    # ============================================================================
+    # STEP 2: Memory and docs search (project state, history, decisions)
+    # ============================================================================
+    
+    - id: list_all_libraries
+      description: "Get list of all indexed documentation libraries"
+      tool: x_docs-mcp-server_list_libraries
+      outputs:
+        all_libraries: "{{.}}"
+      store: true
+    
+    - id: list_all_libraries2
+      description: "Get list of all indexed documentation libraries"
+      tool: x_docs-mcp-server_list_libraries
+      inputs:
+        test_input: "test_input"
+      outputs:
+        libs_from_step1: "{{.results.list_all_libraries.all_libraries}}"
+        test: "test_output"
+      store: true
+
+      

@@ -7,12 +7,12 @@ import (
 
 // Environment variable names
 const (
-	EnvConfigPath    = "MUSTER_CONFIG_PATH"
-	EnvEndpoint      = "MUSTER_ENDPOINT"
-	EnvLogLevel      = "MUSTER_LOG_LEVEL"
-	EnvOutputFormat  = "MUSTER_OUTPUT_FORMAT"
-	EnvHTTPPort      = "MUSTER_HTTP_PORT"
-	EnvMCPPort       = "MUSTER_MCP_PORT"
+	EnvConfigPath   = "MUSTER_CONFIG_PATH"
+	EnvEndpoint     = "MUSTER_ENDPOINT"
+	EnvLogLevel     = "MUSTER_LOG_LEVEL"
+	EnvOutputFormat = "MUSTER_OUTPUT_FORMAT"
+	EnvHTTPPort     = "MUSTER_HTTP_PORT"
+	EnvMCPPort      = "MUSTER_MCP_PORT"
 )
 
 // GetEnvOrDefault returns the environment variable value if set, otherwise returns the default value.

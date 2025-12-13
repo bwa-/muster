@@ -48,6 +48,10 @@ Technical reference for commands, APIs, and configurations. Find exact syntax, p
 - **[Configuration Reference](configuration.md)** - Complete system configuration documentation
   - [Main Configuration](configuration.md#main-configuration-file) - Core system settings (aggregator, ports, transport)
   - [Resource Configuration](configuration.md#resource-configuration-files) - MCPServer, ServiceClass, Workflow, and Service definitions
+- **[Validation Reference](validation.md)** - YAML configuration validation rules and troubleshooting
+  - [Validation Rules](validation.md#validation-rules) - Complete validation rules for all resource types
+  - [Common Errors](validation.md#common-validation-errors) - Examples and fixes for typical validation errors
+  - [Troubleshooting](validation.md#troubleshooting) - How to find and fix validation issues
   - [Directory Structure](configuration.md#configuration-directory-structure) - File organization and locations
   - [Configuration Loading](configuration.md#configuration-loading) - Loading order, custom paths, environment-specific setup
   - [Templating](configuration.md#templating) - Dynamic value templating in configurations
