@@ -188,8 +188,9 @@ func init() {
 	testCmd.Flags().BoolVar(&testValidateScenarios, "validate-scenarios", false, "Validate test scenarios against API schema")
 	testCmd.Flags().StringVar(&testSchemaInput, "schema-input", "schema.json", "Input schema file for validation")
 
-	// Muster configuration path flag
-	testCmd.Flags().StringVar(&testMusterConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+	// Muster configuration path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	testCmd.Flags().StringVar(&testMusterConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
 
 	// Flag to keep temporary config for debugging
 	testCmd.Flags().BoolVar(&testKeepTempConfig, "keep-temp-config", false, "Keep temporary config directory after test execution for debugging")
