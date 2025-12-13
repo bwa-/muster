@@ -1836,8 +1836,51 @@ func getWorkflowStepsSchema() map[string]interface{} {
 					"type":        "string",
 					"description": "Human-readable documentation for this step's purpose",
 				},
+				"forEach": map[string]interface{}{
+					"type":                 "object",
+					"description":          "Enables iteration over a collection, executing the step template for each item",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"items": map[string]interface{}{
+							"description": "Collection to iterate over (can be a template expression like {{.microservices}} or direct array)",
+						},
+						"step": map[string]interface{}{
+							"type":                 "object",
+							"description":          "Step template to execute for each item (current item available as {{.item}})",
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"id": map[string]interface{}{
+									"type":        "string",
+									"description": "Unique identifier for this step template (will be expanded with iteration index)",
+								},
+								"tool": map[string]interface{}{
+									"type":        "string",
+									"description": "Name of the tool to execute for each iteration",
+								},
+								"args": map[string]interface{}{
+									"type":        "object",
+									"description": "Arguments for each iteration (can reference {{.item}} or {{.item.field}})",
+								},
+								"allow_failure": map[string]interface{}{
+									"type":        "boolean",
+									"description": "Whether a single iteration is allowed to fail",
+								},
+								"store": map[string]interface{}{
+									"type":        "boolean",
+									"description": "Whether each iteration's result should be stored",
+								},
+								"description": map[string]interface{}{
+									"type":        "string",
+									"description": "Human-readable documentation for the step template",
+								},
+							},
+							"required": []string{"id", "tool"},
+						},
+					},
+					"required": []string{"items", "step"},
+				},
 			},
-			"required": []string{"id", "tool"},
+			"required": []string{"id"},
 		},
 		"minItems": 1,
 	}
