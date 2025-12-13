@@ -3,7 +3,7 @@ package main
 import "muster/cmd"
 
 // Version can be set during build with -ldflags
-var version = "0.0.71"
+var version = "0.0.72"
 
 func main() {
 	cmd.SetVersion(version)
