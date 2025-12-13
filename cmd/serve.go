@@ -76,7 +76,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create application configuration without cluster arguments
-	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath, configPathExplicit)
+	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath, configPathExplicit, cmd.Root().Version)
 
 	// Create and initialize the application
 	application, err := app.NewApplication(cfg)
