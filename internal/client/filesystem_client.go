@@ -570,6 +570,13 @@ func (f *filesystemClient) GetWorkflow(ctx context.Context, name, namespace stri
 		return nil, fmt.Errorf("failed to read Workflow file %s: %w", filePath, err)
 	}
 
+	// Validate YAML before unmarshaling
+	validator := validation.NewWorkflowValidator()
+	validationResult := validator.Validate(data, filePath)
+	if !validationResult.IsValid() {
+		return nil, fmt.Errorf("Workflow validation failed:\n%s", validationResult.Error())
+	}
+
 	var workflow musterv1alpha1.Workflow
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Workflow from %s: %w", filePath, err)
