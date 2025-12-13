@@ -103,3 +103,5 @@ This fork follows a strict branch workflow to maintain clean history and enable 
 - Keep feature branches small and focused (one logical change)
 - Keep dev as throw-away branch (rebuilt when needed)
 - Never version bump in feature branches (done during merge to dev)
+
+**IMPORTANT:** Only merge *complete* features into the `dev` branch. Do not merge incomplete or partially implemented features. Every feature branch must be fully implemented, tested, and documented before merging to `dev`.
