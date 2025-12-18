@@ -81,7 +81,8 @@ func (a *Adapter) ExecuteWorkflow(ctx context.Context, workflowName string, args
 	workflow := a.convertCRDToWorkflow(workflowCRD)
 
 	// Check if workflow is available before execution
-	if !a.isWorkflowAvailable(workflow) {
+	missingTools := a.getMissingTools(workflow)
+	if len(missingTools) > 0 {
 		// Generate workflow unavailable event with missing tools
 		missingTools := a.findMissingTools(workflow)
 		a.generateCRDEvent(workflowName, events.ReasonWorkflowUnavailable, events.EventData{
@@ -90,7 +91,7 @@ func (a *Adapter) ExecuteWorkflow(ctx context.Context, workflowName string, args
 		})
 
 		return &api.CallToolResult{
-			Content: []interface{}{fmt.Sprintf("workflow %s is not available (missing required tools)", workflowName)},
+			Content: []interface{}{fmt.Sprintf("workflow %s is not available (missing required tools: %s)", workflowName, strings.Join(missingTools, ", "))},
 			IsError: true,
 		}, nil
 	}
@@ -724,26 +725,43 @@ func (a *Adapter) convertToRawExtensionMap(valueMap map[string]interface{}) map[
 
 // isWorkflowAvailable checks if a workflow has all required tools available
 func (a *Adapter) isWorkflowAvailable(workflow *api.Workflow) bool {
+	return len(a.getMissingTools(workflow)) == 0
+}
+
+// getMissingTools returns a list of tools that are required but not available
+func (a *Adapter) getMissingTools(workflow *api.Workflow) []string {
 	a.mu.RLock()
 	if a.generatingTools {
 		a.mu.RUnlock()
 		// If we're in the middle of generating tools, assume available to avoid circular dependency
-		return true
+		return nil
 	}
 	a.mu.RUnlock()
 
 	if a.toolChecker == nil {
-		return true // Assume available if no tool checker
+		return nil // Assume available if no tool checker
 	}
+
+	var missingTools []string
 
 	// Check each step's tool availability
 	for _, step := range workflow.Steps {
-		if !a.toolChecker.IsToolAvailable(step.Tool) {
-			return false
+		// Regular step with direct tool
+		if step.Tool != "" {
+			if !a.toolChecker.IsToolAvailable(step.Tool) {
+				missingTools = append(missingTools, step.Tool)
+			}
+		}
+		
+		// forEach step - check the tool in the forEach template
+		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
+			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
+				missingTools = append(missingTools, step.ForEach.Step.Tool)
+			}
 		}
 	}
 
-	return true
+	return missingTools
 }
 
 // findMissingTools returns a list of tools that are not available for a workflow
@@ -1080,8 +1098,9 @@ func (a *Adapter) ExecuteTool(ctx context.Context, toolName string, args map[str
 		return a.handleExecutionList(ctx, args)
 	case toolName == "workflow_execution_get":
 		return a.handleExecutionGet(ctx, args)
-	case toolName == "workflow_transform_text":
-		return a.handleTransformText(args)
+	// TODO: Re-enable when text transformation is fully implemented
+	// case toolName == "workflow_transform_text":
+	// 	return a.handleTransformText(args)
 
 	case strings.HasPrefix(toolName, "action_"):
 		// Execute workflow
@@ -1186,61 +1205,13 @@ func (a *Adapter) handleGet(args map[string]interface{}) (*api.CallToolResult, e
 	}, nil
 }
 
-func (a *Adapter) handleTransformText(args map[string]interface{}) (*api.CallToolResult, error) {
-	// Validate input
-	input, ok := args["input"].(string)
-	if !ok {
-		return &api.CallToolResult{
-			Content: []interface{}{"input is required and must be a string"},
-			IsError: true,
-		}, nil
-	}
-
-	// Validate steps
-	stepsRaw, ok := args["steps"]
-	if !ok {
-		return &api.CallToolResult{
-			Content: []interface{}{"steps is required"},
-			IsError: true,
-		}, nil
-	}
-
-	// Convert steps to TransformationStep array
-	var steps []TransformationStep
-	stepsJSON, err := json.Marshal(stepsRaw)
-	if err != nil {
-		return &api.CallToolResult{
-			Content: []interface{}{fmt.Sprintf("Failed to parse steps: %v", err)},
-			IsError: true,
-		}, nil
-	}
-
-	if err := json.Unmarshal(stepsJSON, &steps); err != nil {
-		return &api.CallToolResult{
-			Content: []interface{}{fmt.Sprintf("Failed to unmarshal steps: %v", err)},
-			IsError: true,
-		}, nil
-	}
-
-	// Create transformer and execute
-	transformer := NewTextTransformer()
-	result, err := transformer.Transform(TransformRequest{
-		Input: input,
-		Steps: steps,
-	})
-
-	if err != nil {
-		return &api.CallToolResult{
-			Content: []interface{}{fmt.Sprintf("Transformation failed: %v", err)},
-			IsError: true,
-		}, nil
-	}
-
-	return &api.CallToolResult{
-		Content: []interface{}{result.Result},
-		IsError: false,
-	}, nil
-}
+// TODO: Re-implement text transformation when ready
+// func (a *Adapter) handleTransformText(args map[string]interface{}) (*api.CallToolResult, error) {
+// 	return &api.CallToolResult{
+// 		Content: []interface{}{"Text transformation not yet implemented"},
+// 		IsError: true,
+// 	}, nil
+// }
 
 func (a *Adapter) handleCreate(args map[string]interface{}) (*api.CallToolResult, error) {
 	var req api.WorkflowCreateRequest
