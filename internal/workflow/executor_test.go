@@ -511,21 +511,29 @@ func TestWorkflowExecutor_ForEach_ErrorHandling(t *testing.T) {
 	assert.NotEmpty(t, tool, "Tool name should not be empty in error response")
 	assert.Equal(t, "nonexistent_tool", tool, "Tool name should match the forEach step tool")
 	
-	// Check that error message is present and includes forEach context
+	// Check that error message is present and includes tool name
 	errorMsg, hasError := firstStep["error"].(string)
 	assert.True(t, hasError, "Should have error field")
 	assert.NotEmpty(t, errorMsg, "Error message should not be empty")
-	assert.Contains(t, errorMsg, "forEach step failed", "Error should mention forEach")
-	assert.Contains(t, errorMsg, "nonexistent_tool", "Error should include tool name")
+	assert.Contains(t, errorMsg, "tool 'nonexistent_tool' is not available", "Error should clearly state tool is not available")
 	
-	// Check that forEach context is present
-	forEachContext, hasContext := firstStep["forEach_context"]
-	assert.True(t, hasContext, "Should have forEach_context field")
+	// Check that available_tools is present to help user find correct name
+	availableTools, hasAvailableTools := firstStep["available_tools"].(map[string]interface{})
+	assert.True(t, hasAvailableTools, "Should have available_tools field")
 	
-	if hasContext {
-		contextMap := forEachContext.(map[string]interface{})
-		assert.Equal(t, "nonexistent_tool", contextMap["template"], "Template should be preserved")
-		assert.Equal(t, "item1", contextMap["item"], "Item should be preserved")
-		assert.Equal(t, float64(0), contextMap["index"], "Index should be preserved")
+	if hasAvailableTools {
+		// Verify structure has core, external, workflow categories
+		_, hasCore := availableTools["core"]
+		_, hasExternal := availableTools["external"]
+		_, hasWorkflow := availableTools["workflow"]
+		total, hasTotal := availableTools["total"]
+		
+		assert.True(t, hasCore, "Should have core tools category")
+		assert.True(t, hasExternal, "Should have external tools category")
+		assert.True(t, hasWorkflow, "Should have workflow tools category")
+		assert.True(t, hasTotal, "Should have total count")
+		if totalInt, ok := total.(int); ok {
+			assert.GreaterOrEqual(t, totalInt, 0, "Total should be non-negative")
+		}
 	}
 }

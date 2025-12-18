@@ -398,19 +398,6 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				"allow_failure": step.AllowFailure,
 			})
 
-			// Build enhanced error message with forEach context if applicable
-			errorMsg := err.Error()
-			if step.Metadata != nil {
-				if template, ok := step.Metadata["forEach_template"].(string); ok {
-					if template != step.Tool {
-						errorMsg = fmt.Sprintf("forEach step failed: tool template '%s' resolved to '%s' - %s", template, step.Tool, err.Error())
-					} else {
-						errorMsg = fmt.Sprintf("forEach step failed: tool '%s' - %s", step.Tool, err.Error())
-					}
-				}
-			}
-
-			// Record the failed step metadata with forEach context
 			failedMeta := stepMetadata{
 				ID:                  step.ID,
 				Tool:                step.Tool,
@@ -430,7 +417,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				// Store the error result for subsequent steps to reference
 				if step.Store {
 					errorResult := map[string]interface{}{
-						"error":   errorMsg,
+						"error":   err.Error(),
 						"success": false,
 						"isError": true,
 					}
@@ -442,8 +429,8 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				continue
 			}
 
-			// Build clean partial result for failed workflows with forEach metadata
-			steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, step.ID, errorMsg, step.Metadata)
+			// Build clean partial result for failed workflows with available tools
+			steps := we.buildStepsArrayWithAvailableTools(execCtx.stepMetadata, execCtx.results, step.ID, step.Tool, err.Error())
 
 			partialResult := map[string]interface{}{
 				"execution_id":  "", // Will be filled by manager
@@ -566,7 +553,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 	}
 
 	// Build clean final result with consolidated step information
-	steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, "", "", nil)
+	steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, "", "")
 
 	finalResult := map[string]interface{}{
 		"execution_id":  "", // Will be filled by manager
@@ -617,7 +604,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 }
 
 // buildStepsArray creates a consolidated steps array from step metadata and results
-func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results map[string]interface{}, failedStepID string, errorMessage string, failedStepMetadata map[string]interface{}) []map[string]interface{} {
+func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results map[string]interface{}, failedStepID string, errorMessage string) []map[string]interface{} {
 	var steps []map[string]interface{}
 
 	for _, stepMeta := range stepMetadata {
@@ -651,21 +638,79 @@ func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results
 		// Add error if this is the failed step
 		if failedStepID != "" && stepMeta.ID == failedStepID {
 			step["error"] = errorMessage
+		}
+
+		steps = append(steps, step)
+	}
+
+	return steps
+}
+
+// buildStepsArrayWithAvailableTools builds the steps array and includes available tools for failed tool calls
+func (we *WorkflowExecutor) buildStepsArrayWithAvailableTools(stepMetadata []stepMetadata, results map[string]interface{}, failedStepID string, failedTool string, errorMessage string) []map[string]interface{} {
+	var steps []map[string]interface{}
+
+	// Get all available tools from aggregator
+	var availableTools []string
+	if aggregator := api.GetAggregator(); aggregator != nil {
+		availableTools = aggregator.GetAvailableTools()
+	}
+
+	// Group tools by category (core_, x_, workflow_)
+	toolsByCategory := map[string][]string{
+		"core":     []string{},
+		"external": []string{},
+		"workflow": []string{},
+	}
+
+	for _, tool := range availableTools {
+		if strings.HasPrefix(tool, "core_") {
+			toolsByCategory["core"] = append(toolsByCategory["core"], tool)
+		} else if strings.HasPrefix(tool, "x_") {
+			toolsByCategory["external"] = append(toolsByCategory["external"], tool)
+		} else if strings.HasPrefix(tool, "workflow_") {
+			toolsByCategory["workflow"] = append(toolsByCategory["workflow"], tool)
+		}
+	}
+
+	for _, stepMeta := range stepMetadata {
+		step := map[string]interface{}{
+			"id":     stepMeta.ID,
+			"tool":   stepMeta.Tool,
+			"status": stepMeta.Status,
+		}
+
+		// Add condition information if present
+		if stepMeta.ConditionEvaluation != nil {
+			step["condition_evaluation"] = *stepMeta.ConditionEvaluation
+		}
+		if stepMeta.ConditionResult != nil {
+			step["condition_result"] = stepMeta.ConditionResult
+		}
+		if stepMeta.ConditionTool != "" {
+			step["condition_tool"] = stepMeta.ConditionTool
+		}
+
+		// Add allow_failure flag if true
+		if stepMeta.AllowFailure {
+			step["allow_failure"] = stepMeta.AllowFailure
+		}
+
+		// Add result if available
+		if stepMeta.Store && results[stepMeta.ID] != nil {
+			step["result"] = results[stepMeta.ID]
+		}
+
+		// Add error if this is the failed step
+		if failedStepID != "" && stepMeta.ID == failedStepID {
+			step["error"] = fmt.Sprintf("tool '%s' is not available: %s", failedTool, errorMessage)
 			
-			// Add forEach context if available
-			if failedStepMetadata != nil {
-				if template, ok := failedStepMetadata["forEach_template"].(string); ok {
-					forEach := map[string]interface{}{
-						"template": template,
-					}
-					if item, ok := failedStepMetadata["forEach_item"]; ok {
-						forEach["item"] = item
-					}
-					if index, ok := failedStepMetadata["forEach_index"]; ok {
-						forEach["index"] = index
-					}
-					step["forEach_context"] = forEach
-				}
+			// Add available tools to help user find correct name
+			step["available_tools"] = map[string]interface{}{
+				"core":     toolsByCategory["core"],
+				"external": toolsByCategory["external"],
+				"workflow": toolsByCategory["workflow"],
+				"total":    len(availableTools),
 			}
 		}
 
