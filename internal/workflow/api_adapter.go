@@ -29,6 +29,10 @@ type Adapter struct {
 	executionTracker *ExecutionTracker
 	toolChecker      ToolAvailabilityChecker
 
+	// Tool discovery state tracking
+	toolsDiscovered bool         // true after first tool update event
+	discoveryMutex  sync.RWMutex // protects toolsDiscovered flag
+
 	// Prevent circular dependency during tool generation
 	generatingTools bool
 	mu              sync.RWMutex
@@ -58,10 +62,26 @@ func NewAdapterWithClient(musterClient client.MusterClient, namespace string, to
 	return adapter
 }
 
-// Register registers this adapter with the API layer
+// Register registers this adapter with the API layer and subscribes to tool updates
 func (a *Adapter) Register() {
 	api.RegisterWorkflow(a)
-	logging.Debug("WorkflowAdapter", "Registered workflow adapter with API layer")
+	api.SubscribeToToolUpdates(a)
+	logging.Debug("WorkflowAdapter", "Registered workflow adapter with API layer and subscribed to tool updates")
+}
+
+// OnToolsUpdated implements the ToolUpdateSubscriber interface
+// This method is called when tools become available or change
+func (a *Adapter) OnToolsUpdated(event api.ToolUpdateEvent) {
+	a.discoveryMutex.Lock()
+	wasDiscovered := a.toolsDiscovered
+	a.toolsDiscovered = true
+	a.discoveryMutex.Unlock()
+
+	if !wasDiscovered {
+		logging.Info("WorkflowAdapter", "Initial tool discovery complete: %d tools available", len(event.Tools))
+	} else {
+		logging.Debug("WorkflowAdapter", "Tool update received: %d tools available", len(event.Tools))
+	}
 }
 
 // ExecuteWorkflow executes a workflow and returns MCP result
@@ -726,6 +746,16 @@ func (a *Adapter) convertToRawExtensionMap(valueMap map[string]interface{}) map[
 
 // isWorkflowAvailable checks if a workflow has all required tools available
 func (a *Adapter) isWorkflowAvailable(workflow *api.Workflow) bool {
+	// During startup before tools are discovered, assume workflows are available
+	// This prevents false negatives when workflows are loaded before MCP servers connect
+	a.discoveryMutex.RLock()
+	toolsReady := a.toolsDiscovered
+	a.discoveryMutex.RUnlock()
+
+	if !toolsReady {
+		return true // Defer validation until after tool discovery
+	}
+
 	return len(a.getMissingTools(workflow)) == 0
 }
 
@@ -738,6 +768,16 @@ func (a *Adapter) getMissingTools(workflow *api.Workflow) []string {
 		return nil
 	}
 	a.mu.RUnlock()
+
+	// During startup before tools are discovered, assume all tools are available
+	// This prevents false negatives when workflows are loaded before MCP servers connect
+	a.discoveryMutex.RLock()
+	toolsReady := a.toolsDiscovered
+	a.discoveryMutex.RUnlock()
+
+	if !toolsReady {
+		return nil // Defer validation until after tool discovery
+	}
 
 	if a.toolChecker == nil {
 		return nil // Assume available if no tool checker
@@ -753,7 +793,7 @@ func (a *Adapter) getMissingTools(workflow *api.Workflow) []string {
 				missingTools = append(missingTools, step.Tool)
 			}
 		}
-		
+
 		// forEach step - check the tool in the forEach template
 		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
 			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
@@ -795,14 +835,14 @@ func (a *Adapter) buildToolAvailabilityError(workflowName string, missingTools [
 
 	// Build error response
 	errorData := map[string]interface{}{
-		"error":          fmt.Sprintf("workflow '%s' is not available", workflowName),
-		"missing_tools":  missingTools,
+		"error":         fmt.Sprintf("workflow '%s' is not available", workflowName),
+		"missing_tools": missingTools,
 		"available_tools": map[string]interface{}{
-			"core_tools":     toolsByCategory["core"],
-			"external_mcps":  toolsByCategory["external"],
-			"workflows":      toolsByCategory["workflow"],
-			"other":          toolsByCategory["other"],
-			"total_count":    len(availableTools),
+			"core_tools":    toolsByCategory["core"],
+			"external_mcps": toolsByCategory["external"],
+			"workflows":     toolsByCategory["workflow"],
+			"other":         toolsByCategory["other"],
+			"total_count":   len(availableTools),
 		},
 		"hint": "Check if the required MCP servers are running and registered",
 	}
@@ -2126,3 +2166,5 @@ func getBoolFromMap(data map[string]interface{}, key string) bool {
 	}
 	return false
 }
+
+// getTextTransformStepsSchema returns the detailed schema definition for text transformation steps

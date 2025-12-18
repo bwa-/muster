@@ -94,7 +94,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 	expandedSteps, err := we.expandForEachSteps(workflow.Steps, execCtx)
 	if err != nil {
 		logging.Error("WorkflowExecutor", err, "Failed to expand forEach steps")
-		
+
 		// Build partial result showing which forEach step failed
 		steps := []map[string]interface{}{}
 		for _, step := range workflow.Steps {
@@ -114,7 +114,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				})
 			}
 		}
-		
+
 		partialResult := map[string]interface{}{
 			"execution_id":  "",
 			"workflow":      workflow.Name,
@@ -123,7 +123,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 			"steps":         steps,
 			"template_vars": execCtx.templateVars,
 		}
-		
+
 		partialJSON, _ := json.Marshal(partialResult)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{mcp.NewTextContent(string(partialJSON))},
