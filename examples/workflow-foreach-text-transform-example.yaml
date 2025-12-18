@@ -1,0 +1,201 @@
+---
+# Example workflow demonstrating forEach loop with text transformation
+# This workflow shows how to parse unstructured tool output into a structured list
+# and then iterate over it using forEach loops
+
+apiVersion: muster.giantswarm.io/v1alpha1
+kind: Workflow
+metadata:
+  name: search-documentation
+  namespace: default
+spec:
+  name: search-documentation
+  description: |
+    Demonstrates forEach loops with text transformation.
+    1. Lists all available documentation libraries (returns markdown list)
+    2. Parses the markdown list into a JSON array using core_workflow_transform_text
+    3. Iterates over each library using forEach to search for content
+  
+  # Input arguments
+  args:
+    research_query:
+      type: string
+      required: true
+      description: Topic or question to search for across all documentation
+
+  # Workflow steps
+  steps:
+    # Step 1: Get list of documentation libraries
+    # This tool returns a markdown formatted list like:
+    # "Indexed libraries:\n\n- ansible\n- docker\n- muster\n- proxmox"
+    - id: list_all_libraries
+      tool: x_docs-mcp-server_list_libraries
+      description: Fetch all indexed documentation libraries
+      store: true
+
+    # Step 2: Transform markdown list into JSON array
+    # This step parses the unstructured markdown output into a structured array
+    # that can be used by the forEach loop
+    - id: parse_libraries
+      tool: core_workflow_transform_text
+      description: Convert markdown list to JSON array
+      args:
+        input: "{{.results.list_all_libraries}}"
+        steps:
+          # Extract lines starting with bullet points
+          - type: extract_lines_starting_with
+            args:
+              prefix: "- "
+          # Remove the "- " prefix from each line
+          - type: trim_prefix
+            args:
+              prefix: "- "
+          # Trim whitespace from each entry
+          - type: trim_each
+          # Remove any empty entries
+          - type: remove_empty
+      store: true
+
+    # Step 3: Search each library using forEach
+    # The forEach loop iterates over the parsed array from step 2
+    # Each iteration gets the current library name as {{.item}}
+    - id: search_all_docs
+      forEach:
+        items: "{{.results.parse_libraries}}"
+        step:
+          id: search_library
+          tool: x_docs-mcp-server_search_docs
+          description: Search documentation in library
+          args:
+            library: "{{.item}}"
+            query: "{{.input.research_query}}"
+          store: true
+          allow_failure: true  # Continue if a library search fails
+
+---
+# Another example: Processing service status output
+apiVersion: muster.giantswarm.io/v1alpha1
+kind: Workflow
+metadata:
+  name: process-service-statuses
+  namespace: default
+spec:
+  name: process-service-statuses
+  description: |
+    Demonstrates complex text transformations with forEach.
+    Parses service status output and processes each service.
+  
+  args:
+    service_pattern:
+      type: string
+      required: false
+      default: "*"
+      description: Pattern to filter services
+
+  steps:
+    # Step 1: Get service statuses (imagine this returns text output)
+    - id: get_statuses
+      tool: core_service_list
+      store: true
+
+    # Step 2: Extract and clean service names
+    - id: extract_service_names
+      tool: core_workflow_transform_text
+      args:
+        input: "{{.results.get_statuses}}"
+        steps:
+          # Split by lines
+          - type: split_lines
+          # Extract lines matching pattern (services usually have specific format)
+          - type: extract_lines_matching
+            args:
+              pattern: "^[a-zA-Z0-9_-]+:"
+          # Remove everything after the colon
+          - type: replace_regex
+            args:
+              pattern: ":.*$"
+              replacement: ""
+          # Trim whitespace
+          - type: trim_each
+          # Remove empty lines
+          - type: remove_empty
+          # Remove duplicates
+          - type: remove_duplicates
+      store: true
+
+    # Step 3: Get detailed status for each service
+    - id: check_all_services
+      forEach:
+        items: "{{.results.extract_service_names}}"
+        step:
+          id: check_service
+          tool: core_service_status
+          args:
+            name: "{{.item}}"
+          store: true
+          allow_failure: true
+
+---
+# Example: CSV-like data processing
+apiVersion: muster.giantswarm.io/v1alpha1
+kind: Workflow
+metadata:
+  name: process-csv-data
+  namespace: default
+spec:
+  name: process-csv-data
+  description: |
+    Demonstrates parsing CSV-like output into individual items.
+    Shows multiple transformation steps working together.
+  
+  args:
+    data_source:
+      type: string
+      required: true
+      description: Tool or source providing CSV data
+
+  steps:
+    # Get data (assume it returns something like: "item1, item2, item3")
+    - id: fetch_data
+      tool: some_data_tool
+      args:
+        source: "{{.input.data_source}}"
+      store: true
+
+    # Parse CSV data
+    - id: parse_csv
+      tool: core_workflow_transform_text
+      args:
+        input: "{{.results.fetch_data}}"
+        steps:
+          # First, extract content after a marker (if needed)
+          - type: extract_after
+            args:
+              marker: "Results:"
+          # Replace any "and" with commas for consistency
+          - type: replace
+            args:
+              old: " and "
+              new: ", "
+          # Split by comma
+          - type: split
+            args:
+              delimiter: ","
+          # Trim whitespace from each item
+          - type: trim_each
+          # Remove empty entries
+          - type: remove_empty
+          # Convert to lowercase for consistency
+          - type: to_lower
+      store: true
+
+    # Process each item
+    - id: process_items
+      forEach:
+        items: "{{.results.parse_csv}}"
+        step:
+          id: process_item
+          tool: some_processing_tool
+          args:
+            item: "{{.item}}"
+          store: true
