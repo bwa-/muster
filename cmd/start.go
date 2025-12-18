@@ -125,7 +125,7 @@ func init() {
 	defaultOutputFormat := config.GetOutputFormatFromEnv("table")
 	startCmd.PersistentFlags().StringVarP(&startOutputFormat, "output", "o", defaultOutputFormat, "Output format (table, json, yaml) (env: MUSTER_OUTPUT_FORMAT)")
 	startCmd.PersistentFlags().BoolVarP(&startQuiet, "quiet", "q", false, "Suppress non-essential output")
-	
+
 	// Config path flag with environment variable support
 	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
 	startCmd.PersistentFlags().StringVar(&startConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
@@ -164,6 +164,15 @@ func parseWorkflowParameters(workflowName string) map[string]interface{} {
 	// Parse arguments after the workflow name
 	workflowArgs := args[workflowIndex+1:]
 
+	// Known CLI flags that should not be treated as workflow parameters
+	knownFlags := map[string]bool{
+		"output":      true,
+		"o":           true,
+		"quiet":       true,
+		"q":           true,
+		"config-path": true,
+	}
+
 	for i := 0; i < len(workflowArgs); i++ {
 		arg := workflowArgs[i]
 
@@ -178,7 +187,7 @@ func parseWorkflowParameters(workflowName string) map[string]interface{} {
 			}
 
 			// Skip known CLI flags
-			if knownCLIFlags[flagName] {
+			if knownFlags[flagName] {
 				// Skip this and potentially next argument if not using = format
 				if !strings.Contains(paramArg, "=") && i+1 < len(workflowArgs) && !strings.HasPrefix(workflowArgs[i+1], "--") {
 					i++ // Skip the value too

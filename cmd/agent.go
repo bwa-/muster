@@ -80,7 +80,7 @@ func init() {
 	agentCmd.Flags().BoolVar(&agentREPL, "repl", false, "Start interactive REPL mode")
 	agentCmd.Flags().BoolVar(&agentMCPServer, "mcp-server", false, "Run as MCP server (stdio transport)")
 	agentCmd.Flags().StringVar(&agentTransport, "transport", string(agent.TransportStreamableHTTP), "Transport to use (streamable-http, sse)")
-	
+
 	// Config path flag with environment variable support
 	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
 	agentCmd.Flags().StringVar(&agentConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")

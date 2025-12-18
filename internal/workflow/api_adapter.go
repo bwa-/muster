@@ -738,8 +738,18 @@ func (a *Adapter) isWorkflowAvailable(workflow *api.Workflow) bool {
 
 	// Check each step's tool availability
 	for _, step := range workflow.Steps {
-		if !a.toolChecker.IsToolAvailable(step.Tool) {
-			return false
+		// Regular step with direct tool
+		if step.Tool != "" {
+			if !a.toolChecker.IsToolAvailable(step.Tool) {
+				return false
+			}
+		}
+
+		// forEach step - check the tool in the forEach template
+		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
+			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
+				return false
+			}
 		}
 	}
 

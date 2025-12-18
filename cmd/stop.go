@@ -69,7 +69,7 @@ func init() {
 	defaultOutputFormat := config.GetOutputFormatFromEnv("table")
 	stopCmd.PersistentFlags().StringVarP(&stopOutputFormat, "output", "o", defaultOutputFormat, "Output format (table, json, yaml) (env: MUSTER_OUTPUT_FORMAT)")
 	stopCmd.PersistentFlags().BoolVarP(&stopQuiet, "quiet", "q", false, "Suppress non-essential output")
-	
+
 	// Config path flag with environment variable support
 	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
 	stopCmd.PersistentFlags().StringVar(&stopConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
