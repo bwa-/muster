@@ -83,6 +83,7 @@ func (a *Adapter) ExecuteWorkflow(ctx context.Context, workflowName string, args
 	// Check if workflow is available before execution
 	missingTools := a.getMissingTools(workflow)
 	if len(missingTools) > 0 {
+		errorResponse := a.buildToolAvailabilityError(workflowName, missingTools)
 		// Generate workflow unavailable event with missing tools
 		missingTools := a.findMissingTools(workflow)
 		a.generateCRDEvent(workflowName, events.ReasonWorkflowUnavailable, events.EventData{
@@ -91,7 +92,7 @@ func (a *Adapter) ExecuteWorkflow(ctx context.Context, workflowName string, args
 		})
 
 		return &api.CallToolResult{
-			Content: []interface{}{fmt.Sprintf("workflow %s is not available (missing required tools: %s)", workflowName, strings.Join(missingTools, ", "))},
+			Content: []interface{}{errorResponse},
 			IsError: true,
 		}, nil
 	}
@@ -762,6 +763,58 @@ func (a *Adapter) getMissingTools(workflow *api.Workflow) []string {
 	}
 
 	return missingTools
+}
+
+// buildToolAvailabilityError creates a detailed JSON error response showing missing tools and all available tools
+func (a *Adapter) buildToolAvailabilityError(workflowName string, missingTools []string) string {
+	// Get all available tools from aggregator
+	var availableTools []string
+	if aggregator := api.GetAggregator(); aggregator != nil {
+		availableTools = aggregator.GetAvailableTools()
+	}
+
+	// Group tools by category (core_, x_, workflow_)
+	toolsByCategory := map[string][]string{
+		"core":     []string{},
+		"external": []string{},
+		"workflow": []string{},
+		"other":    []string{},
+	}
+
+	for _, tool := range availableTools {
+		if strings.HasPrefix(tool, "core_") {
+			toolsByCategory["core"] = append(toolsByCategory["core"], tool)
+		} else if strings.HasPrefix(tool, "x_") {
+			toolsByCategory["external"] = append(toolsByCategory["external"], tool)
+		} else if strings.HasPrefix(tool, "workflow_") {
+			toolsByCategory["workflow"] = append(toolsByCategory["workflow"], tool)
+		} else {
+			toolsByCategory["other"] = append(toolsByCategory["other"], tool)
+		}
+	}
+
+	// Build error response
+	errorData := map[string]interface{}{
+		"error":          fmt.Sprintf("workflow '%s' is not available", workflowName),
+		"missing_tools":  missingTools,
+		"available_tools": map[string]interface{}{
+			"core_tools":     toolsByCategory["core"],
+			"external_mcps":  toolsByCategory["external"],
+			"workflows":      toolsByCategory["workflow"],
+			"other":          toolsByCategory["other"],
+			"total_count":    len(availableTools),
+		},
+		"hint": "Check if the required MCP servers are running and registered",
+	}
+
+	// Marshal to JSON
+	jsonData, err := json.MarshalIndent(errorData, "", "  ")
+	if err != nil {
+		// Fallback to simple error message
+		return fmt.Sprintf("workflow %s is not available (missing required tools: %s)", workflowName, strings.Join(missingTools, ", "))
+	}
+
+	return string(jsonData)
 }
 
 // findMissingTools returns a list of tools that are not available for a workflow
