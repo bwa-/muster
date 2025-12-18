@@ -94,7 +94,41 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 	expandedSteps, err := we.expandForEachSteps(workflow.Steps, execCtx)
 	if err != nil {
 		logging.Error("WorkflowExecutor", err, "Failed to expand forEach steps")
-		return nil, fmt.Errorf("failed to expand forEach steps: %w", err)
+		
+		// Build partial result showing which forEach step failed
+		steps := []map[string]interface{}{}
+		for _, step := range workflow.Steps {
+			if step.ForEach != nil {
+				// This forEach step likely failed expansion
+				steps = append(steps, map[string]interface{}{
+					"id":     step.ID,
+					"tool":   step.ForEach.Step.Tool, // Show the actual tool from forEach template
+					"status": "failed",
+					"error":  fmt.Sprintf("forEach expansion failed: %v", err),
+				})
+			} else {
+				steps = append(steps, map[string]interface{}{
+					"id":     step.ID,
+					"tool":   step.Tool,
+					"status": "not_executed",
+				})
+			}
+		}
+		
+		partialResult := map[string]interface{}{
+			"execution_id":  "",
+			"workflow":      workflow.Name,
+			"status":        "failed",
+			"input":         execCtx.input,
+			"steps":         steps,
+			"template_vars": execCtx.templateVars,
+		}
+		
+		partialJSON, _ := json.Marshal(partialResult)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{mcp.NewTextContent(string(partialJSON))},
+			IsError: true,
+		}, fmt.Errorf("failed to expand forEach steps: %w", err)
 	}
 	logging.Debug("WorkflowExecutor", "Expanded %d steps to %d steps", len(workflow.Steps), len(expandedSteps))
 
