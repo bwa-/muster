@@ -398,8 +398,20 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				"allow_failure": step.AllowFailure,
 			})
 
-			// Record the failed step metadata
-			execCtx.stepMetadata = append(execCtx.stepMetadata, stepMetadata{
+			// Build enhanced error message with forEach context if applicable
+			errorMsg := err.Error()
+			if step.Metadata != nil {
+				if template, ok := step.Metadata["forEach_template"].(string); ok {
+					if template != step.Tool {
+						errorMsg = fmt.Sprintf("forEach step failed: tool template '%s' resolved to '%s' - %s", template, step.Tool, err.Error())
+					} else {
+						errorMsg = fmt.Sprintf("forEach step failed: tool '%s' - %s", step.Tool, err.Error())
+					}
+				}
+			}
+
+			// Record the failed step metadata with forEach context
+			failedMeta := stepMetadata{
 				ID:                  step.ID,
 				Tool:                step.Tool,
 				Store:               step.Store,
@@ -408,7 +420,8 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				ConditionEvaluation: conditionEvaluation,
 				ConditionResult:     conditionResult,
 				ConditionTool:       conditionTool,
-			})
+			}
+			execCtx.stepMetadata = append(execCtx.stepMetadata, failedMeta)
 
 			// If step allows failure, continue execution
 			if step.AllowFailure {
@@ -417,7 +430,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				// Store the error result for subsequent steps to reference
 				if step.Store {
 					errorResult := map[string]interface{}{
-						"error":   err.Error(),
+						"error":   errorMsg,
 						"success": false,
 						"isError": true,
 					}
@@ -429,8 +442,8 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				continue
 			}
 
-			// Build clean partial result for failed workflows
-			steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, step.ID, err.Error())
+			// Build clean partial result for failed workflows with forEach metadata
+			steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, step.ID, errorMsg, step.Metadata)
 
 			partialResult := map[string]interface{}{
 				"execution_id":  "", // Will be filled by manager
@@ -553,7 +566,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 	}
 
 	// Build clean final result with consolidated step information
-	steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, "", "")
+	steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, "", "", nil)
 
 	finalResult := map[string]interface{}{
 		"execution_id":  "", // Will be filled by manager
@@ -604,7 +617,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 }
 
 // buildStepsArray creates a consolidated steps array from step metadata and results
-func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results map[string]interface{}, failedStepID string, errorMessage string) []map[string]interface{} {
+func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results map[string]interface{}, failedStepID string, errorMessage string, failedStepMetadata map[string]interface{}) []map[string]interface{} {
 	var steps []map[string]interface{}
 
 	for _, stepMeta := range stepMetadata {
@@ -638,6 +651,22 @@ func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results
 		// Add error if this is the failed step
 		if failedStepID != "" && stepMeta.ID == failedStepID {
 			step["error"] = errorMessage
+			
+			// Add forEach context if available
+			if failedStepMetadata != nil {
+				if template, ok := failedStepMetadata["forEach_template"].(string); ok {
+					forEach := map[string]interface{}{
+						"template": template,
+					}
+					if item, ok := failedStepMetadata["forEach_item"]; ok {
+						forEach["item"] = item
+					}
+					if index, ok := failedStepMetadata["forEach_index"]; ok {
+						forEach["index"] = index
+					}
+					step["forEach_context"] = forEach
+				}
+			}
 		}
 
 		steps = append(steps, step)
@@ -1026,7 +1055,7 @@ func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx
 				return nil, fmt.Errorf("failed to resolve forEach step args for %s[%d]: %w", step.ID, idx, err)
 			}
 
-			// Create expanded step
+			// Create expanded step with metadata for error reporting
 			expandedStep := api.WorkflowStep{
 				ID:           fmt.Sprintf("%s_%d", step.ForEach.Step.ID, idx),
 				Tool:         step.ForEach.Step.Tool,
@@ -1034,6 +1063,11 @@ func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx
 				Store:        step.ForEach.Step.Store,
 				AllowFailure: step.ForEach.Step.AllowFailure,
 				Description:  fmt.Sprintf("%s (item %d/%d)", step.ForEach.Step.Description, idx+1, len(itemsArray)),
+				Metadata: map[string]interface{}{
+					"forEach_template": step.ForEach.Step.Tool,
+					"forEach_item":     item,
+					"forEach_index":    idx,
+				},
 			}
 
 			expandedSteps = append(expandedSteps, expandedStep)

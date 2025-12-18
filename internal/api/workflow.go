@@ -207,6 +207,10 @@ type WorkflowStep struct {
 	// When specified, this step becomes a forEach loop and Tool/Args are ignored.
 	// The step is expanded into multiple executions at runtime.
 	ForEach *ForEachConfig `yaml:"forEach,omitempty" json:"forEach,omitempty"`
+
+	// Metadata stores additional context about the step, such as forEach iteration information.
+	// This is used internally for error reporting and debugging.
+	Metadata map[string]interface{} `yaml:"-" json:"-"`
 }
 
 // WorkflowInputSchema defines the input argument schema for a workflow.

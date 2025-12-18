@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"muster/internal/api"
@@ -426,6 +427,105 @@ func TestWorkflowExecutor_ForEach_InvalidItemsType(t *testing.T) {
 
 	result, err := executor.ExecuteWorkflow(context.Background(), workflow, map[string]interface{}{})
 	assert.Error(t, err)
-	assert.Nil(t, result)
+	assert.NotNil(t, result, "Should return a result even when forEach expansion fails")
 	assert.Contains(t, err.Error(), "must be an array")
+	assert.True(t, result.IsError, "Result should be marked as error")
+}
+
+// mockToolCallerWithError implements ToolCaller that returns errors for specific tools
+type mockToolCallerWithError struct {
+	calls        []toolCall
+	errorForTool string
+}
+
+func (m *mockToolCallerWithError) CallToolInternal(ctx context.Context, toolName string, args map[string]interface{}) (*mcp.CallToolResult, error) {
+	m.calls = append(m.calls, toolCall{toolName: toolName, args: args})
+
+	// Return error if this is the tool we want to fail
+	if m.errorForTool != "" && toolName == m.errorForTool {
+		return nil, assert.AnError
+	}
+
+	// Return a simple success result
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			mcp.NewTextContent(`{"status": "success", "data": "test result"}`),
+		},
+		IsError: false,
+	}, nil
+}
+
+func TestWorkflowExecutor_ForEach_ErrorHandling(t *testing.T) {
+	mock := &mockToolCallerWithError{
+		errorForTool: "nonexistent_tool",
+	}
+	executor := NewWorkflowExecutor(mock)
+
+	workflow := &api.Workflow{
+		Name:        "test_foreach_error",
+		Description: "Test forEach error message improvements",
+		Args:        map[string]api.ArgDefinition{},
+		Steps: []api.WorkflowStep{
+			{
+				ID: "process_items",
+				ForEach: &api.ForEachConfig{
+					Items: []interface{}{"item1", "item2", "item3"},
+					Step: api.WorkflowStepTemplate{
+						ID:   "failing_step",
+						Tool: "nonexistent_tool",
+						Args: map[string]interface{}{
+							"value": "{{.item}}",
+						},
+						AllowFailure: false,
+					},
+				},
+			},
+		},
+	}
+
+	result, err := executor.ExecuteWorkflow(context.Background(), workflow, map[string]interface{}{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+
+	// Verify result contains detailed error information
+	assert.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	
+	textContent, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+	
+	// Parse the JSON result
+	var resultData map[string]interface{}
+	jsonErr := json.Unmarshal([]byte(textContent.Text), &resultData)
+	require.NoError(t, jsonErr, "Should be valid JSON")
+	
+	// Verify the steps array contains error details
+	steps, ok := resultData["steps"].([]interface{})
+	require.True(t, ok, "Should have steps array")
+	require.Greater(t, len(steps), 0, "Should have at least one step")
+	
+	firstStep := steps[0].(map[string]interface{})
+	
+	// Check that tool name is not empty (the main fix we're testing)
+	tool, _ := firstStep["tool"].(string)
+	assert.NotEmpty(t, tool, "Tool name should not be empty in error response")
+	assert.Equal(t, "nonexistent_tool", tool, "Tool name should match the forEach step tool")
+	
+	// Check that error message is present and includes forEach context
+	errorMsg, hasError := firstStep["error"].(string)
+	assert.True(t, hasError, "Should have error field")
+	assert.NotEmpty(t, errorMsg, "Error message should not be empty")
+	assert.Contains(t, errorMsg, "forEach step failed", "Error should mention forEach")
+	assert.Contains(t, errorMsg, "nonexistent_tool", "Error should include tool name")
+	
+	// Check that forEach context is present
+	forEachContext, hasContext := firstStep["forEach_context"]
+	assert.True(t, hasContext, "Should have forEach_context field")
+	
+	if hasContext {
+		contextMap := forEachContext.(map[string]interface{})
+		assert.Equal(t, "nonexistent_tool", contextMap["template"], "Template should be preserved")
+		assert.Equal(t, "item1", contextMap["item"], "Item should be preserved")
+		assert.Equal(t, float64(0), contextMap["index"], "Index should be preserved")
+	}
 }
