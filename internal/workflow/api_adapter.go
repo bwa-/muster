@@ -1024,6 +1024,26 @@ func (a *Adapter) GetTools() []api.ToolMetadata {
 				},
 			},
 		},
+		// Text transformation utility tool
+		{
+			Name:        "workflow_transform_text",
+			Description: "Apply a series of text transformations to convert unstructured text into structured data. Useful for parsing tool outputs into arrays or modifying text step-by-step.",
+			Args: []api.ArgMetadata{
+				{
+					Name:        "input",
+					Type:        "string",
+					Required:    true,
+					Description: "Input text to transform",
+				},
+				{
+					Name:        "steps",
+					Type:        "array",
+					Required:    true,
+					Description: "Array of transformation steps to apply sequentially",
+					Schema:      getTextTransformStepsSchema(),
+				},
+			},
+		},
 	}
 
 	// Add workflow execution tools (action_*) dynamically
@@ -1060,6 +1080,8 @@ func (a *Adapter) ExecuteTool(ctx context.Context, toolName string, args map[str
 		return a.handleExecutionList(ctx, args)
 	case toolName == "workflow_execution_get":
 		return a.handleExecutionGet(ctx, args)
+	case toolName == "workflow_transform_text":
+		return a.handleTransformText(args)
 
 	case strings.HasPrefix(toolName, "action_"):
 		// Execute workflow
@@ -1160,6 +1182,62 @@ func (a *Adapter) handleGet(args map[string]interface{}) (*api.CallToolResult, e
 
 	return &api.CallToolResult{
 		Content: []interface{}{result},
+		IsError: false,
+	}, nil
+}
+
+func (a *Adapter) handleTransformText(args map[string]interface{}) (*api.CallToolResult, error) {
+	// Validate input
+	input, ok := args["input"].(string)
+	if !ok {
+		return &api.CallToolResult{
+			Content: []interface{}{"input is required and must be a string"},
+			IsError: true,
+		}, nil
+	}
+
+	// Validate steps
+	stepsRaw, ok := args["steps"]
+	if !ok {
+		return &api.CallToolResult{
+			Content: []interface{}{"steps is required"},
+			IsError: true,
+		}, nil
+	}
+
+	// Convert steps to TransformationStep array
+	var steps []TransformationStep
+	stepsJSON, err := json.Marshal(stepsRaw)
+	if err != nil {
+		return &api.CallToolResult{
+			Content: []interface{}{fmt.Sprintf("Failed to parse steps: %v", err)},
+			IsError: true,
+		}, nil
+	}
+
+	if err := json.Unmarshal(stepsJSON, &steps); err != nil {
+		return &api.CallToolResult{
+			Content: []interface{}{fmt.Sprintf("Failed to unmarshal steps: %v", err)},
+			IsError: true,
+		}, nil
+	}
+
+	// Create transformer and execute
+	transformer := NewTextTransformer()
+	result, err := transformer.Transform(TransformRequest{
+		Input: input,
+		Steps: steps,
+	})
+
+	if err != nil {
+		return &api.CallToolResult{
+			Content: []interface{}{fmt.Sprintf("Transformation failed: %v", err)},
+			IsError: true,
+		}, nil
+	}
+
+	return &api.CallToolResult{
+		Content: []interface{}{result.Result},
 		IsError: false,
 	}, nil
 }
@@ -1838,6 +1916,42 @@ func getWorkflowStepsSchema() map[string]interface{} {
 				},
 			},
 			"required": []string{"id", "tool"},
+		},
+		"minItems": 1,
+	}
+}
+
+// getTextTransformStepsSchema returns the detailed schema definition for text transformation steps
+func getTextTransformStepsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Array of text transformation steps to apply sequentially. Each step transforms the output of the previous step.",
+		"items": map[string]interface{}{
+			"type":                 "object",
+			"description":          "Individual transformation step configuration",
+			"additionalProperties": false,
+			"properties": map[string]interface{}{
+				"type": map[string]interface{}{
+					"type":        "string",
+					"description": "Type of transformation to apply",
+					"enum": []string{
+						// Extraction operations
+						"extract_lines_starting_with", "extract_lines_matching", "extract_between", "extract_after", "extract_before",
+						// Modification operations
+						"replace", "replace_regex", "trim", "trim_prefix", "trim_suffix", "trim_each", "to_lower", "to_upper",
+						// Splitting/filtering operations
+						"split", "split_lines", "remove_empty", "remove_duplicates",
+					},
+				},
+				"args": map[string]interface{}{
+					"type":        "object",
+					"description": "Arguments for the transformation step (depends on type)",
+					"additionalProperties": map[string]interface{}{
+						"description": "Transformation-specific argument value",
+					},
+				},
+			},
+			"required": []string{"type"},
 		},
 		"minItems": 1,
 	}

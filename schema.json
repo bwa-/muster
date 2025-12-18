@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Generated schema for muster core API tools for test scenario validation",
-  "generated_at": "2025-07-24T14:29:42+02:00",
+  "generated_at": "2025-12-13T23:47:13+01:00",
   "properties": {
     "tools": {
       "description": "Core API tools available in muster serve",
@@ -1425,6 +1425,55 @@
                     "description": "Human-readable documentation for this step's purpose",
                     "type": "string"
                   },
+                  "forEach": {
+                    "additionalProperties": false,
+                    "description": "Enables iteration over a collection, executing the step template for each item",
+                    "properties": {
+                      "items": {
+                        "description": "Collection to iterate over (can be a template expression like {{.microservices}} or direct array)"
+                      },
+                      "step": {
+                        "additionalProperties": false,
+                        "description": "Step template to execute for each item (current item available as {{.item}})",
+                        "properties": {
+                          "allow_failure": {
+                            "description": "Whether a single iteration is allowed to fail",
+                            "type": "boolean"
+                          },
+                          "args": {
+                            "description": "Arguments for each iteration (can reference {{.item}} or {{.item.field}})",
+                            "type": "object"
+                          },
+                          "description": {
+                            "description": "Human-readable documentation for the step template",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "Unique identifier for this step template (will be expanded with iteration index)",
+                            "type": "string"
+                          },
+                          "store": {
+                            "description": "Whether each iteration's result should be stored",
+                            "type": "boolean"
+                          },
+                          "tool": {
+                            "description": "Name of the tool to execute for each iteration",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "tool"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "items",
+                      "step"
+                    ],
+                    "type": "object"
+                  },
                   "id": {
                     "description": "Unique identifier for this step within the workflow",
                     "type": "string"
@@ -1446,8 +1495,7 @@
                   }
                 },
                 "required": [
-                  "id",
-                  "tool"
+                  "id"
                 ],
                 "type": "object"
               },
@@ -1542,6 +1590,65 @@
               "type": "boolean"
             }
           },
+          "type": "object"
+        },
+        "core_workflow_transform_text": {
+          "description": "Arguments for core_workflow_transform_text tool",
+          "properties": {
+            "input": {
+              "description": "Input text to transform",
+              "type": "string"
+            },
+            "steps": {
+              "description": "Array of transformation steps to apply sequentially",
+              "items": {
+                "additionalProperties": false,
+                "description": "Individual transformation step configuration",
+                "properties": {
+                  "args": {
+                    "additionalProperties": {
+                      "description": "Transformation-specific argument value"
+                    },
+                    "description": "Arguments for the transformation step (depends on type)",
+                    "type": "object"
+                  },
+                  "type": {
+                    "description": "Type of transformation to apply",
+                    "enum": [
+                      "extract_lines_starting_with",
+                      "extract_lines_matching",
+                      "extract_between",
+                      "extract_after",
+                      "extract_before",
+                      "replace",
+                      "replace_regex",
+                      "trim",
+                      "trim_prefix",
+                      "trim_suffix",
+                      "trim_each",
+                      "to_lower",
+                      "to_upper",
+                      "split",
+                      "split_lines",
+                      "remove_empty",
+                      "remove_duplicates"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "input",
+            "steps"
+          ],
           "type": "object"
         },
         "core_workflow_update": {
@@ -1645,6 +1752,55 @@
                     "description": "Human-readable documentation for this step's purpose",
                     "type": "string"
                   },
+                  "forEach": {
+                    "additionalProperties": false,
+                    "description": "Enables iteration over a collection, executing the step template for each item",
+                    "properties": {
+                      "items": {
+                        "description": "Collection to iterate over (can be a template expression like {{.microservices}} or direct array)"
+                      },
+                      "step": {
+                        "additionalProperties": false,
+                        "description": "Step template to execute for each item (current item available as {{.item}})",
+                        "properties": {
+                          "allow_failure": {
+                            "description": "Whether a single iteration is allowed to fail",
+                            "type": "boolean"
+                          },
+                          "args": {
+                            "description": "Arguments for each iteration (can reference {{.item}} or {{.item.field}})",
+                            "type": "object"
+                          },
+                          "description": {
+                            "description": "Human-readable documentation for the step template",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "Unique identifier for this step template (will be expanded with iteration index)",
+                            "type": "string"
+                          },
+                          "store": {
+                            "description": "Whether each iteration's result should be stored",
+                            "type": "boolean"
+                          },
+                          "tool": {
+                            "description": "Name of the tool to execute for each iteration",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "tool"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "items",
+                      "step"
+                    ],
+                    "type": "object"
+                  },
                   "id": {
                     "description": "Unique identifier for this step within the workflow",
                     "type": "string"
@@ -1666,8 +1822,7 @@
                   }
                 },
                 "required": [
-                  "id",
-                  "tool"
+                  "id"
                 ],
                 "type": "object"
               },
@@ -1782,6 +1937,55 @@
                     "description": "Human-readable documentation for this step's purpose",
                     "type": "string"
                   },
+                  "forEach": {
+                    "additionalProperties": false,
+                    "description": "Enables iteration over a collection, executing the step template for each item",
+                    "properties": {
+                      "items": {
+                        "description": "Collection to iterate over (can be a template expression like {{.microservices}} or direct array)"
+                      },
+                      "step": {
+                        "additionalProperties": false,
+                        "description": "Step template to execute for each item (current item available as {{.item}})",
+                        "properties": {
+                          "allow_failure": {
+                            "description": "Whether a single iteration is allowed to fail",
+                            "type": "boolean"
+                          },
+                          "args": {
+                            "description": "Arguments for each iteration (can reference {{.item}} or {{.item.field}})",
+                            "type": "object"
+                          },
+                          "description": {
+                            "description": "Human-readable documentation for the step template",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "Unique identifier for this step template (will be expanded with iteration index)",
+                            "type": "string"
+                          },
+                          "store": {
+                            "description": "Whether each iteration's result should be stored",
+                            "type": "boolean"
+                          },
+                          "tool": {
+                            "description": "Name of the tool to execute for each iteration",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "tool"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "items",
+                      "step"
+                    ],
+                    "type": "object"
+                  },
                   "id": {
                     "description": "Unique identifier for this step within the workflow",
                     "type": "string"
@@ -1803,8 +2007,7 @@
                   }
                 },
                 "required": [
-                  "id",
-                  "tool"
+                  "id"
                 ],
                 "type": "object"
               },
