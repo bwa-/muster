@@ -584,6 +584,10 @@ func (a *Adapter) convertWorkflowSteps(crdSteps []musterv1alpha1.WorkflowStep) [
 			step.Condition = a.convertWorkflowCondition(crdStep.Condition)
 		}
 
+		if crdStep.ForEach != nil {
+			step.ForEach = a.convertForEachConfig(crdStep.ForEach)
+		}
+
 		steps = append(steps, step)
 	}
 	return steps
@@ -607,9 +611,51 @@ func (a *Adapter) convertWorkflowStepsToCRD(steps []api.WorkflowStep) []musterv1
 			crdStep.Condition = a.convertWorkflowConditionToCRD(step.Condition)
 		}
 
+		if step.ForEach != nil {
+			crdStep.ForEach = a.convertForEachConfigToCRD(step.ForEach)
+		}
+
 		crdSteps = append(crdSteps, crdStep)
 	}
 	return crdSteps
+}
+
+// convertForEachConfig converts CRD ForEachConfig to internal format
+func (a *Adapter) convertForEachConfig(crdForEach *musterv1alpha1.ForEachConfig) *api.ForEachConfig {
+	if crdForEach == nil {
+		return nil
+	}
+
+	return &api.ForEachConfig{
+		Items: a.convertRawExtension(crdForEach.Items),
+		Step: api.WorkflowStepTemplate{
+			ID:           crdForEach.Step.ID,
+			Tool:         crdForEach.Step.Tool,
+			Args:         a.convertRawExtensionMap(crdForEach.Step.Args),
+			AllowFailure: crdForEach.Step.AllowFailure,
+			Store:        crdForEach.Step.Store,
+			Description:  crdForEach.Step.Description,
+		},
+	}
+}
+
+// convertForEachConfigToCRD converts internal ForEachConfig to CRD format
+func (a *Adapter) convertForEachConfigToCRD(forEach *api.ForEachConfig) *musterv1alpha1.ForEachConfig {
+	if forEach == nil {
+		return nil
+	}
+
+	return &musterv1alpha1.ForEachConfig{
+		Items: a.convertToRawExtension(forEach.Items),
+		Step: musterv1alpha1.WorkflowStepTemplate{
+			ID:           forEach.Step.ID,
+			Tool:         forEach.Step.Tool,
+			Args:         a.convertToRawExtensionMap(forEach.Step.Args),
+			AllowFailure: forEach.Step.AllowFailure,
+			Store:        forEach.Step.Store,
+			Description:  forEach.Step.Description,
+		},
+	}
 }
 
 // convertWorkflowCondition converts CRD WorkflowCondition to internal format
