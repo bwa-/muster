@@ -1925,33 +1925,384 @@ func getWorkflowStepsSchema() map[string]interface{} {
 func getTextTransformStepsSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "array",
-		"description": "Array of text transformation steps to apply sequentially. Each step transforms the output of the previous step.",
+		"description": "Array of text transformation steps to apply sequentially. Each step transforms the output of the previous step. Pipeline-based text processing for converting unstructured text into structured data.",
 		"items": map[string]interface{}{
-			"type":                 "object",
-			"description":          "Individual transformation step configuration",
-			"additionalProperties": false,
-			"properties": map[string]interface{}{
-				"type": map[string]interface{}{
-					"type":        "string",
-					"description": "Type of transformation to apply",
-					"enum": []string{
-						// Extraction operations
-						"extract_lines_starting_with", "extract_lines_matching", "extract_between", "extract_after", "extract_before",
-						// Modification operations
-						"replace", "replace_regex", "trim", "trim_prefix", "trim_suffix", "trim_each", "to_lower", "to_upper",
-						// Splitting/filtering operations
-						"split", "split_lines", "remove_empty", "remove_duplicates",
+			"type":        "object",
+			"description": "Individual transformation step configuration",
+			"oneOf": []map[string]interface{}{
+				// ============================================================================
+				// EXTRACTION OPERATIONS (string → string or array)
+				// ============================================================================
+				{
+					"description":          "Extract lines that start with a specific prefix. Input: string → Output: array. Example: Extract markdown bullet points starting with '- '.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_lines_starting_with",
+							"description": "Extracts lines that start with a specific prefix",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"prefix"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"prefix": map[string]interface{}{
+									"type":        "string",
+									"description": "The prefix to match at the start of lines (e.g., '- ' for markdown lists, 'ERROR:' for error lines)",
+								},
+							},
+						},
 					},
+					"required": []string{"type", "args"},
 				},
-				"args": map[string]interface{}{
-					"type":        "object",
-					"description": "Arguments for the transformation step (depends on type)",
-					"additionalProperties": map[string]interface{}{
-						"description": "Transformation-specific argument value",
+				{
+					"description":          "Extract lines matching a regular expression pattern. Input: string → Output: array. Example: Extract lines matching '^[0-9]+\\.' for numbered lists.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_lines_matching",
+							"description": "Extracts lines matching a regex pattern",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"pattern"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"pattern": map[string]interface{}{
+									"type":        "string",
+									"description": "Regular expression pattern to match lines (e.g., '^ERROR:', '^[a-zA-Z0-9_-]+:')",
+								},
+							},
+						},
 					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Extract text between two marker strings. Input: string → Output: string. Example: Extract content between '[START]' and '[END]' markers.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_between",
+							"description": "Extracts text between two markers",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"start", "end"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"start": map[string]interface{}{
+									"type":        "string",
+									"description": "Start marker string (content after this marker will be included)",
+								},
+								"end": map[string]interface{}{
+									"type":        "string",
+									"description": "End marker string (content before this marker will be included)",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Extract all text after a marker string. Input: string → Output: string. Example: Extract content after 'Results:' header.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_after",
+							"description": "Extracts all text after a marker",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"marker"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"marker": map[string]interface{}{
+									"type":        "string",
+									"description": "Marker string to search for (returns all text after this marker)",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Extract all text before a marker string. Input: string → Output: string. Example: Extract content before '---' separator.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_before",
+							"description": "Extracts all text before a marker",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"marker"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"marker": map[string]interface{}{
+									"type":        "string",
+									"description": "Marker string to search for (returns all text before this marker)",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				// ============================================================================
+				// MODIFICATION OPERATIONS (string|array → same type)
+				// ============================================================================
+				{
+					"description":          "Simple string replacement (replaces all occurrences). Input: string or array → Output: same type. Example: Replace ' and ' with ', ' to change separators.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "replace",
+							"description": "Performs simple string replacement",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"old"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"old": map[string]interface{}{
+									"type":        "string",
+									"description": "String to find and replace",
+								},
+								"new": map[string]interface{}{
+									"type":        "string",
+									"description": "String to replace with (optional, defaults to empty string for removal)",
+									"default":     "",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Regex-based replacement (supports capture groups). Input: string or array → Output: same type. Example: Replace '\\s+' with ' ' to normalize whitespace.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "replace_regex",
+							"description": "Performs regex-based replacement",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"pattern"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"pattern": map[string]interface{}{
+									"type":        "string",
+									"description": "Regular expression pattern to match (e.g., '\\s+', ':.*$', '^[0-9]+\\.')",
+								},
+								"replacement": map[string]interface{}{
+									"type":        "string",
+									"description": "Replacement string (optional, defaults to empty string for removal)",
+									"default":     "",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Remove leading and trailing whitespace. Input: string or array → Output: same type. Works on each element if input is array.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "trim",
+							"description": "Removes leading and trailing whitespace",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Remove specific prefix from text. Input: string or array → Output: same type. Example: Remove '- ' from markdown list items.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "trim_prefix",
+							"description": "Removes a specific prefix from text",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"prefix"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"prefix": map[string]interface{}{
+									"type":        "string",
+									"description": "Prefix to remove from the beginning of strings (e.g., '- ', '• ', 'Item: ')",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Remove specific suffix from text. Input: string or array → Output: same type. Example: Remove '.txt' from filenames.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "trim_suffix",
+							"description": "Removes a specific suffix from text",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"suffix"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"suffix": map[string]interface{}{
+									"type":        "string",
+									"description": "Suffix to remove from the end of strings (e.g., '.txt', '.log', ':')",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Trim whitespace from each array element. Input: array → Output: array. Use this after split operations to clean up items.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "trim_each",
+							"description": "Trims whitespace from each array element",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Convert text to lowercase. Input: string or array → Output: same type. Useful for case-insensitive comparisons.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "to_lower",
+							"description": "Converts text to lowercase",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Convert text to uppercase. Input: string or array → Output: same type. Useful for normalization.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "to_upper",
+							"description": "Converts text to uppercase",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				// ============================================================================
+				// SPLITTING/FILTERING OPERATIONS
+				// ============================================================================
+				{
+					"description":          "Split string by delimiter. Input: string → Output: array. Example: Split 'a,b,c' by ',' into ['a','b','c'].",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "split",
+							"description": "Splits a string by delimiter",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"delimiter": map[string]interface{}{
+									"type":        "string",
+									"description": "Delimiter to split on (default: ',')",
+									"default":     ",",
+								},
+							},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Split string by newlines. Input: string → Output: array. Commonly used as first step to process multi-line output.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "split_lines",
+							"description": "Splits text by newlines",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Remove empty strings from array. Input: array → Output: array. Use after split operations to clean up empty elements.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "remove_empty",
+							"description": "Removes empty strings from array",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Remove duplicate strings from array. Input: array → Output: array. Preserves first occurrence order.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "remove_duplicates",
+							"description": "Removes duplicate strings from array",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
 				},
 			},
-			"required": []string{"type"},
 		},
 		"minItems": 1,
 	}
