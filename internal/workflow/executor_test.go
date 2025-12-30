@@ -222,7 +222,7 @@ func TestWorkflowExecutor_ResolveTemplate_StringNumbers(t *testing.T) {
 
 func TestWorkflowExecutor_ForEach_BasicArray(t *testing.T) {
 	mock := &mockToolCaller{}
-	executor := NewWorkflowExecutor(mock)
+	executor := NewWorkflowExecutor(mock, nil)
 
 	workflow := &api.Workflow{
 		Name:        "test_foreach",
@@ -284,7 +284,7 @@ func TestWorkflowExecutor_ForEach_BasicArray(t *testing.T) {
 
 func TestWorkflowExecutor_ForEach_DirectArray(t *testing.T) {
 	mock := &mockToolCaller{}
-	executor := NewWorkflowExecutor(mock)
+	executor := NewWorkflowExecutor(mock, nil)
 
 	workflow := &api.Workflow{
 		Name:        "test_foreach_direct",
@@ -320,7 +320,7 @@ func TestWorkflowExecutor_ForEach_DirectArray(t *testing.T) {
 
 func TestWorkflowExecutor_ForEach_WithRegularSteps(t *testing.T) {
 	mock := &mockToolCaller{}
-	executor := NewWorkflowExecutor(mock)
+	executor := NewWorkflowExecutor(mock, nil)
 
 	workflow := &api.Workflow{
 		Name:        "test_mixed_steps",
@@ -373,7 +373,7 @@ func TestWorkflowExecutor_ForEach_WithRegularSteps(t *testing.T) {
 
 func TestWorkflowExecutor_ForEach_EmptyArray(t *testing.T) {
 	mock := &mockToolCaller{}
-	executor := NewWorkflowExecutor(mock)
+	executor := NewWorkflowExecutor(mock, nil)
 
 	workflow := &api.Workflow{
 		Name:        "test_empty_foreach",
@@ -404,7 +404,7 @@ func TestWorkflowExecutor_ForEach_EmptyArray(t *testing.T) {
 
 func TestWorkflowExecutor_ForEach_InvalidItemsType(t *testing.T) {
 	mock := &mockToolCaller{}
-	executor := NewWorkflowExecutor(mock)
+	executor := NewWorkflowExecutor(mock, nil)
 
 	workflow := &api.Workflow{
 		Name:        "test_invalid_foreach",
@@ -459,7 +459,7 @@ func TestWorkflowExecutor_ForEach_ErrorHandling(t *testing.T) {
 	mock := &mockToolCallerWithError{
 		errorForTool: "nonexistent_tool",
 	}
-	executor := NewWorkflowExecutor(mock)
+	executor := NewWorkflowExecutor(mock, nil)
 
 	workflow := &api.Workflow{
 		Name:        "test_foreach_error",
