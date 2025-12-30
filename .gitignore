@@ -1,4 +1,5 @@
 /muster
+muster-v-*
 dist/
 tmp/
 .muster/config.yaml

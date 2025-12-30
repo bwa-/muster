@@ -562,9 +562,34 @@ func (a *Adapter) convertWorkflowSteps(crdSteps []musterv1alpha1.WorkflowStep) [
 			step.Condition = a.convertWorkflowCondition(crdStep.Condition)
 		}
 
+		if crdStep.ForEach != nil {
+			step.ForEach = a.convertForEachConfig(crdStep.ForEach)
+		}
+
 		steps = append(steps, step)
 	}
 	return steps
+}
+
+// convertForEachConfig converts CRD ForEachConfig to internal format
+func (a *Adapter) convertForEachConfig(crdForEach *musterv1alpha1.ForEachConfig) *api.ForEachConfig {
+	forEach := &api.ForEachConfig{
+		Items: a.convertRawExtension(crdForEach.Items),
+		Step:  a.convertWorkflowStepTemplate(crdForEach.Step),
+	}
+	return forEach
+}
+
+// convertWorkflowStepTemplate converts CRD WorkflowStepTemplate to internal format
+func (a *Adapter) convertWorkflowStepTemplate(crdTemplate musterv1alpha1.WorkflowStepTemplate) api.WorkflowStepTemplate {
+	return api.WorkflowStepTemplate{
+		ID:           crdTemplate.ID,
+		Tool:         crdTemplate.Tool,
+		Args:         a.convertRawExtensionMap(crdTemplate.Args),
+		AllowFailure: crdTemplate.AllowFailure,
+		Store:        crdTemplate.Store,
+		Description:  crdTemplate.Description,
+	}
 }
 
 // convertWorkflowStepsToCRD converts internal WorkflowSteps to CRD format
@@ -1685,6 +1710,13 @@ func convertWorkflowSteps(stepsParam []interface{}) ([]api.WorkflowStep, error) 
 			return nil, fmt.Errorf("step %d is not a valid object", i)
 		}
 
+		// Debug: log all keys in the step map
+		var keys []string
+		for k := range stepMap {
+			keys = append(keys, k)
+		}
+		logging.Info("APIAdapter", "Step %d keys: %v", i, keys)
+
 		var step api.WorkflowStep
 
 		// ID is required
@@ -1697,14 +1729,17 @@ func convertWorkflowSteps(stepsParam []interface{}) ([]api.WorkflowStep, error) 
 			return nil, fmt.Errorf("step %d: id is required", i)
 		}
 
-		// Tool is required
+		// Check if this is a forEach step
+		_, hasForEach := stepMap["forEach"]
+
+		// Tool is required (unless forEach is specified)
 		if tool, ok := stepMap["tool"].(string); ok {
-			if tool == "" {
+			if tool == "" && !hasForEach {
 				return nil, fmt.Errorf("step %d: tool cannot be empty", i)
 			}
 			step.Tool = tool
-		} else {
-			return nil, fmt.Errorf("step %d: tool is required", i)
+		} else if !hasForEach {
+			return nil, fmt.Errorf("step %d: tool is required (unless forEach is specified)", i)
 		}
 
 		// Condition (optional)
@@ -1736,10 +1771,91 @@ func convertWorkflowSteps(stepsParam []interface{}) ([]api.WorkflowStep, error) 
 			step.AllowFailure = allowFailure
 		}
 
+		// ForEach (optional)
+		if forEachParam, ok := stepMap["forEach"].(map[string]interface{}); ok {
+			forEach, err := convertForEachConfig(forEachParam)
+			if err != nil {
+				return nil, fmt.Errorf("step %d: invalid forEach configuration: %v", i, err)
+			}
+			step.ForEach = &forEach
+		}
+
 		steps = append(steps, step)
 	}
 
 	return steps, nil
+}
+
+// convertForEachConfig converts a forEach configuration map to api.ForEachConfig
+func convertForEachConfig(forEachParam map[string]interface{}) (api.ForEachConfig, error) {
+	var forEach api.ForEachConfig
+
+	// Items is required
+	if items, ok := forEachParam["items"]; ok {
+		forEach.Items = items
+	} else {
+		return forEach, fmt.Errorf("forEach: items is required")
+	}
+
+	// Step is required
+	if stepParam, ok := forEachParam["step"].(map[string]interface{}); ok {
+		step, err := convertWorkflowStepTemplate(stepParam)
+		if err != nil {
+			return forEach, fmt.Errorf("forEach: invalid step template: %v", err)
+		}
+		forEach.Step = step
+	} else {
+		return forEach, fmt.Errorf("forEach: step is required")
+	}
+
+	return forEach, nil
+}
+
+// convertWorkflowStepTemplate converts a step template map to api.WorkflowStepTemplate
+func convertWorkflowStepTemplate(stepParam map[string]interface{}) (api.WorkflowStepTemplate, error) {
+	var step api.WorkflowStepTemplate
+
+	// ID is required
+	if id, ok := stepParam["id"].(string); ok {
+		if id == "" {
+			return step, fmt.Errorf("step template: id cannot be empty")
+		}
+		step.ID = id
+	} else {
+		return step, fmt.Errorf("step template: id is required")
+	}
+
+	// Tool is required
+	if tool, ok := stepParam["tool"].(string); ok {
+		if tool == "" {
+			return step, fmt.Errorf("step template: tool cannot be empty")
+		}
+		step.Tool = tool
+	} else {
+		return step, fmt.Errorf("step template: tool is required")
+	}
+
+	// Args (optional)
+	if args, ok := stepParam["args"].(map[string]interface{}); ok {
+		step.Args = args
+	}
+
+	// Store (optional)
+	if store, ok := stepParam["store"].(bool); ok {
+		step.Store = store
+	}
+
+	// AllowFailure (optional)
+	if allowFailure, ok := stepParam["allowFailure"].(bool); ok {
+		step.AllowFailure = allowFailure
+	}
+
+	// Description (optional)
+	if description, ok := stepParam["description"].(string); ok {
+		step.Description = description
+	}
+
+	return step, nil
 }
 
 // convertWorkflowCondition converts a condition map to api.WorkflowCondition

@@ -97,7 +97,12 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 		logging.Error("WorkflowExecutor", err, "Failed to expand forEach steps")
 		return nil, fmt.Errorf("failed to expand forEach steps: %w", err)
 	}
-	logging.Debug("WorkflowExecutor", "Expanded %d steps to %d steps", len(workflow.Steps), len(expandedSteps))
+	logging.Info("WorkflowExecutor", "Expanded %d steps to %d steps for workflow %s", len(workflow.Steps), len(expandedSteps), workflow.Name)
+	
+	// Log each expanded step for debugging
+	for i, step := range expandedSteps {
+		logging.Debug("WorkflowExecutor", "Step %d: ID=%s, Tool=%s, ForEach=%v", i, step.ID, step.Tool, step.ForEach != nil)
+	}
 
 	// Execute each step
 	var lastStepResult *mcp.CallToolResult
@@ -961,9 +966,12 @@ func (we *WorkflowExecutor) valuesEqual(actual, expected interface{}) bool {
 func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx *executionContext) ([]api.WorkflowStep, error) {
 	var expandedSteps []api.WorkflowStep
 
-	for _, step := range steps {
+	for i, step := range steps {
+		logging.Info("WorkflowExecutor", "Processing step %d: ID=%s, Tool=%s, HasForEach=%v", i, step.ID, step.Tool, step.ForEach != nil)
+		
 		// If step has no forEach, keep it as-is
 		if step.ForEach == nil {
+			logging.Info("WorkflowExecutor", "Step %s has no forEach, keeping as-is", step.ID)
 			expandedSteps = append(expandedSteps, step)
 			continue
 		}
@@ -973,16 +981,18 @@ func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx
 		// Resolve the items collection
 		items, err := we.resolveForEachItems(step.ForEach.Items, execCtx)
 		if err != nil {
+			logging.Error("WorkflowExecutor", err, "Failed to resolve forEach items for step %s", step.ID)
 			return nil, fmt.Errorf("failed to resolve forEach items for step %s: %w", step.ID, err)
 		}
 
 		// Validate that items is an array
 		itemsArray, ok := items.([]interface{})
 		if !ok {
+			logging.Error("WorkflowExecutor", nil, "ForEach items for step %s must be an array, got %T: %v", step.ID, items, items)
 			return nil, fmt.Errorf("forEach items for step %s must be an array, got %T", step.ID, items)
 		}
 
-		logging.Debug("WorkflowExecutor", "ForEach step %s has %d items", step.ID, len(itemsArray))
+		logging.Info("WorkflowExecutor", "ForEach step %s expanding to %d iterations", step.ID, len(itemsArray))
 
 		// Create a step for each item
 		for idx, item := range itemsArray {
@@ -1013,7 +1023,7 @@ func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx
 			}
 
 			expandedSteps = append(expandedSteps, expandedStep)
-			logging.Debug("WorkflowExecutor", "Created forEach iteration step: %s", expandedStep.ID)
+			logging.Info("WorkflowExecutor", "Created forEach iteration step: %s (tool: %s)", expandedStep.ID, expandedStep.Tool)
 		}
 	}
 
