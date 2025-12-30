@@ -46,12 +46,12 @@ func (a *Adapter) IsToolAvailable(toolName string) bool {
 	if a.canHandleDirectly(toolName) {
 		return true
 	}
-	
+
 	// Otherwise delegate to the external tool checker (aggregator)
 	if a.toolChecker != nil {
 		return a.toolChecker.IsToolAvailable(toolName)
 	}
-	
+
 	return false
 }
 
@@ -63,10 +63,10 @@ func NewAdapterWithClient(musterClient client.MusterClient, namespace string, to
 	}
 
 	adapter := &Adapter{
-		client:           musterClient,
-		namespace:        namespace,
-		executionTracker: NewExecutionTracker(NewExecutionStorage(configPath)),
-		toolChecker:      toolChecker,
+		client:             musterClient,
+		namespace:          namespace,
+		executionTracker:   NewExecutionTracker(NewExecutionStorage(configPath)),
+		toolChecker:        toolChecker,
 		externalToolCaller: toolCaller,
 	}
 
@@ -509,13 +509,13 @@ func (a *Adapter) canHandleDirectly(toolName string) bool {
 		"workflow_execution_get",
 		"util_transform_text",
 	}
-	
+
 	for _, tool := range directTools {
 		if toolName == tool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -533,7 +533,7 @@ func convertAPIResultToMCP(result *api.CallToolResult) *mcp.CallToolResult {
 			mcpContent[i] = mcp.NewTextContent(string(jsonBytes))
 		}
 	}
-	
+
 	return &mcp.CallToolResult{
 		Content: mcpContent,
 		IsError: result.IsError,
@@ -1182,7 +1182,7 @@ func (a *Adapter) GetTools() []api.ToolMetadata {
 // ExecuteTool executes a tool by name
 func (a *Adapter) ExecuteTool(ctx context.Context, toolName string, args map[string]interface{}) (*api.CallToolResult, error) {
 	logging.Info("WorkflowAdapter", "ExecuteTool called with toolName=%s, args=%+v", toolName, args)
-	
+
 	switch {
 	case toolName == "workflow_list":
 		return a.handleList(args)

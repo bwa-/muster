@@ -769,13 +769,9 @@ func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results
 		}
 
 		// Add output (result from the tool execution)
+		// Only present if store=true (result was stored in results map)
 		if results[stepMeta.ID] != nil {
 			step["output"] = results[stepMeta.ID]
-		}
-
-		// Add result if available (kept for backward compatibility)
-		if stepMeta.Store && results[stepMeta.ID] != nil {
-			step["result"] = results[stepMeta.ID]
 		}
 
 		// Add error if this is the failed step
