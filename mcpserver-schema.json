@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://muster.giantswarm.io/schemas/mcpserver-v1alpha1.json",
+  "title": "Muster MCPServer",
+  "description": "JSON Schema for Muster MCPServer YAML files (v1alpha1)",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "muster.giantswarm.io/v1alpha1",
+      "description": "API version for the MCPServer resource"
+    },
+    "kind": {
+      "type": "string",
+      "const": "MCPServer",
+      "description": "Resource type (must be 'MCPServer')"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63,
+          "description": "Unique name for the MCP server"
+        },
+        "namespace": {
+          "type": "string",
+          "default": "default",
+          "description": "Namespace for the MCPServer resource"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels for organizing MCP servers"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Annotations for additional metadata"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["localCommand"],
+          "description": "How this MCP server should be executed (currently only 'localCommand' is supported)"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Human-readable description of this MCP server's purpose"
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "Command line arguments for localCommand type servers. First element is executable path, followed by arguments."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables to set for the MCP server process"
+        },
+        "autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this MCP server should be automatically started when muster initializes"
+        },
+        "toolPrefix": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+          "description": "Optional prefix prepended to all tool names from this server (helps avoid naming conflicts)"
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "localCommand"
+          }
+        }
+      },
+      "then": {
+        "required": ["command"]
+      }
+    },
+    "status": {
+      "type": "object",
+      "description": "Observed state of the MCP server (managed by muster)",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["unknown", "starting", "running", "stopping", "stopped", "failed"],
+          "description": "Current operational state of the MCP server"
+        },
+        "health": {
+          "type": "string",
+          "enum": ["unknown", "healthy", "unhealthy", "checking"],
+          "description": "Health status of the MCP server"
+        },
+        "availableTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of tool names provided by this MCP server"
+        },
+        "lastError": {
+          "type": "string",
+          "description": "Error message from the most recent server operation"
+        },
+        "conditions": {
+          "type": "array",
+          "description": "Latest observations of the MCPServer's current state",
+          "items": {
+            "type": "object",
+            "required": ["type", "status", "lastTransitionTime", "reason", "message"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$",
+                "maxLength": 316,
+                "description": "Type of condition in CamelCase"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["True", "False", "Unknown"],
+                "description": "Status of the condition"
+              },
+              "lastTransitionTime": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Last time the condition transitioned from one status to another"
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$",
+                "minLength": 1,
+                "maxLength": 1024,
+                "description": "Programmatic identifier indicating the reason for the condition's last transition"
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 32768,
+                "description": "Human readable message indicating details about the transition"
+              },
+              "observedGeneration": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "The .metadata.generation that the condition was set based upon"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
