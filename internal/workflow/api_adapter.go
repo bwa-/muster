@@ -738,8 +738,18 @@ func (a *Adapter) isWorkflowAvailable(workflow *api.Workflow) bool {
 
 	// Check each step's tool availability
 	for _, step := range workflow.Steps {
-		if !a.toolChecker.IsToolAvailable(step.Tool) {
+		// Check regular step tool
+		if step.Tool != "" && !a.toolChecker.IsToolAvailable(step.Tool) {
+			logging.Debug("WorkflowAdapter", "Workflow %s unavailable: missing tool %s", workflow.Name, step.Tool)
 			return false
+		}
+
+		// Check forEach step tool
+		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
+			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
+				logging.Debug("WorkflowAdapter", "Workflow %s unavailable: missing forEach tool %s", workflow.Name, step.ForEach.Step.Tool)
+				return false
+			}
 		}
 	}
 
@@ -760,20 +770,30 @@ func (a *Adapter) findMissingTools(workflow *api.Workflow) []string {
 	}
 
 	var missingTools []string
+	seenTools := make(map[string]bool)
+
 	for _, step := range workflow.Steps {
-		if !a.toolChecker.IsToolAvailable(step.Tool) {
-			// Avoid duplicates
-			found := false
-			for _, tool := range missingTools {
-				if tool == step.Tool {
-					found = true
-					break
-				}
-			}
-			if !found {
+		// Check regular step tool
+		if step.Tool != "" && !a.toolChecker.IsToolAvailable(step.Tool) {
+			if !seenTools[step.Tool] {
 				missingTools = append(missingTools, step.Tool)
+				seenTools[step.Tool] = true
 			}
 		}
+
+		// Check forEach step tool
+		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
+			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
+				if !seenTools[step.ForEach.Step.Tool] {
+					missingTools = append(missingTools, step.ForEach.Step.Tool)
+					seenTools[step.ForEach.Step.Tool] = true
+				}
+			}
+		}
+	}
+
+	if len(missingTools) > 0 {
+		logging.Warn("WorkflowAdapter", "Workflow %s is missing required tools: %v", workflow.Name, missingTools)
 	}
 
 	return missingTools

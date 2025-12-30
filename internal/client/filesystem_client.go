@@ -19,8 +19,8 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"muster/internal/api"
-	musterv1alpha1 "muster/pkg/apis/muster/v1alpha1"
 	"muster/internal/validation"
+	musterv1alpha1 "muster/pkg/apis/muster/v1alpha1"
 	"muster/pkg/logging"
 )
 
