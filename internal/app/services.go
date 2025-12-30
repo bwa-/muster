@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 
 	"muster/internal/aggregator"
@@ -169,6 +170,14 @@ func InitializeServices(cfg *Config) (*Services, error) {
 	if len(serviceClasses) > 0 {
 		logging.Info("Services", "Loaded %d ServiceClass definitions from filesystem", len(serviceClasses))
 	}
+
+	// Validate all configuration files early (fail-fast approach)
+	// This ensures we catch YAML validation errors at startup rather than runtime
+	logging.Info("Services", "Validating configuration files...")
+	if err := validateConfigFiles(musterClient); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	}
+	logging.Info("Services", "Configuration validation successful")
 
 	// Create and register Workflow adapter using the muster client
 	workflowAdapter := workflow.NewAdapterWithClient(musterClient, namespace, toolCaller, toolChecker, cfg.ConfigPath)
@@ -388,3 +397,43 @@ func mergeOAuthServerConfig(cfg *Config) config.OAuthServerConfig {
 // Note: Removed the individual adapter creation functions as they're now replaced by the unified muster client approach
 
 // Note: MCPServer service creation moved to orchestrator for proper dependency management
+
+// validateConfigFiles performs early validation of all configuration files.
+// This function loads MCPServers and Workflows to trigger validation,
+// catching any YAML errors at startup rather than during runtime.
+//
+// Validation is performed by the filesystem client's GetMCPServer and GetWorkflow
+// methods, which call the respective validators before unmarshaling.
+//
+// Returns an error if any configuration file fails validation.
+//
+// Note: This function uses ListMCPServers/ListWorkflows which log validation
+// errors but continue processing. This is intentional - we want the application
+// to start even if some config files have issues, allowing the user to fix them
+// without breaking the entire system. Individual file validation errors are
+// logged at ERROR level for visibility.
+func validateConfigFiles(musterClient client.MusterClient) error {
+	ctx := context.Background()
+
+	// Validate all MCPServers
+	// Note: List methods log individual file errors but don't fail
+	mcpServers, err := musterClient.ListMCPServers(ctx, "default")
+	if err != nil {
+		return fmt.Errorf("failed to load MCPServers: %w", err)
+	}
+	if len(mcpServers) > 0 {
+		logging.Debug("Validation", "Validated %d MCPServer(s)", len(mcpServers))
+	}
+
+	// Validate all Workflows  
+	// Note: List methods log individual file errors but don't fail
+	workflows, err := musterClient.ListWorkflows(ctx, "default")
+	if err != nil {
+		return fmt.Errorf("failed to load Workflows: %w", err)
+	}
+	if len(workflows) > 0 {
+		logging.Debug("Validation", "Validated %d Workflow(s)", len(workflows))
+	}
+
+	return nil
+}

@@ -20,6 +20,7 @@ import (
 
 	"muster/internal/api"
 	musterv1alpha1 "muster/pkg/apis/muster/v1alpha1"
+	"muster/internal/validation"
 	"muster/pkg/logging"
 )
 
@@ -244,6 +245,13 @@ func (f *filesystemClient) GetMCPServer(ctx context.Context, name, namespace str
 			)
 		}
 		return nil, fmt.Errorf("failed to read MCPServer file %s: %w", filePath, err)
+	}
+
+	// Validate YAML before unmarshaling
+	validator := validation.NewMCPServerValidator()
+	validationResult := validator.Validate(data, filePath)
+	if !validationResult.IsValid() {
+		return nil, fmt.Errorf("MCPServer validation failed:\n%s", validationResult.Error())
 	}
 
 	var server musterv1alpha1.MCPServer
@@ -564,6 +572,13 @@ func (f *filesystemClient) GetWorkflow(ctx context.Context, name, namespace stri
 			)
 		}
 		return nil, fmt.Errorf("failed to read Workflow file %s: %w", filePath, err)
+	}
+
+	// Validate YAML before unmarshaling
+	validator := validation.NewWorkflowValidator()
+	validationResult := validator.Validate(data, filePath)
+	if !validationResult.IsValid() {
+		return nil, fmt.Errorf("Workflow validation failed:\n%s", validationResult.Error())
 	}
 
 	var workflow musterv1alpha1.Workflow
