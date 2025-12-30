@@ -74,9 +74,13 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 
 	// Add flags to the command
-	listCmd.PersistentFlags().StringVarP(&listOutputFormat, "output", "o", "table", "Output format (table, json, yaml)")
+	defaultOutputFormat := config.GetOutputFormatFromEnv("table")
+	listCmd.PersistentFlags().StringVarP(&listOutputFormat, "output", "o", defaultOutputFormat, "Output format (table, json, yaml) (env: MUSTER_OUTPUT_FORMAT)")
 	listCmd.PersistentFlags().BoolVarP(&listQuiet, "quiet", "q", false, "Suppress non-essential output")
-	listCmd.PersistentFlags().StringVar(&listConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+
+	// Config path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	listCmd.PersistentFlags().StringVar(&listConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {

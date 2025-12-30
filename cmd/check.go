@@ -73,9 +73,13 @@ func init() {
 	rootCmd.AddCommand(checkCmd)
 
 	// Add flags to the command
-	checkCmd.PersistentFlags().StringVarP(&checkOutputFormat, "output", "o", "table", "Output format (table, json, yaml)")
+	defaultOutputFormat := config.GetOutputFormatFromEnv("table")
+	checkCmd.PersistentFlags().StringVarP(&checkOutputFormat, "output", "o", defaultOutputFormat, "Output format (table, json, yaml) (env: MUSTER_OUTPUT_FORMAT)")
 	checkCmd.PersistentFlags().BoolVarP(&checkQuiet, "quiet", "q", false, "Suppress non-essential output")
-	checkCmd.PersistentFlags().StringVar(&checkConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+
+	// Config path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	checkCmd.PersistentFlags().StringVar(&checkConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {

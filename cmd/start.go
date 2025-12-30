@@ -122,13 +122,27 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 
 	// Add flags to the command
-	startCmd.PersistentFlags().StringVarP(&startOutputFormat, "output", "o", "table", "Output format (table, json, yaml)")
+	defaultOutputFormat := config.GetOutputFormatFromEnv("table")
+	startCmd.PersistentFlags().StringVarP(&startOutputFormat, "output", "o", defaultOutputFormat, "Output format (table, json, yaml) (env: MUSTER_OUTPUT_FORMAT)")
 	startCmd.PersistentFlags().BoolVarP(&startQuiet, "quiet", "q", false, "Suppress non-essential output")
-	startCmd.PersistentFlags().StringVar(&startConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+
+	// Config path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	startCmd.PersistentFlags().StringVar(&startConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
+}
+
+// Known CLI flags that should not be treated as workflow parameters
+var knownCLIFlags = map[string]bool{
+	"output":      true,
+	"o":           true,
+	"quiet":       true,
+	"q":           true,
+	"config-path": true,
 }
 
 // parseWorkflowParameters extracts workflow parameters from raw command line arguments
 // Looks for --param=value or --param value patterns after the workflow name
+// Properly excludes known CLI flags like --output, --quiet, --config-path
 func parseWorkflowParameters(workflowName string) map[string]interface{} {
 	params := make(map[string]interface{})
 
@@ -150,6 +164,15 @@ func parseWorkflowParameters(workflowName string) map[string]interface{} {
 	// Parse arguments after the workflow name
 	workflowArgs := args[workflowIndex+1:]
 
+	// Known CLI flags that should not be treated as workflow parameters
+	knownFlags := map[string]bool{
+		"output":      true,
+		"o":           true,
+		"quiet":       true,
+		"q":           true,
+		"config-path": true,
+	}
+
 	for i := 0; i < len(workflowArgs); i++ {
 		arg := workflowArgs[i]
 
@@ -157,11 +180,15 @@ func parseWorkflowParameters(workflowName string) map[string]interface{} {
 		if strings.HasPrefix(arg, "--") {
 			paramArg := strings.TrimPrefix(arg, "--")
 
-			// Skip known flags
-			if paramArg == "output" || paramArg == "quiet" ||
-				strings.HasPrefix(paramArg, "output=") ||
-				strings.HasPrefix(paramArg, "quiet=") {
-				// Skip this and potentially next argument
+			// Extract the flag name (before = if present)
+			flagName := paramArg
+			if idx := strings.Index(paramArg, "="); idx > 0 {
+				flagName = paramArg[:idx]
+			}
+
+			// Skip known CLI flags
+			if knownFlags[flagName] {
+				// Skip this and potentially next argument if not using = format
 				if !strings.Contains(paramArg, "=") && i+1 < len(workflowArgs) && !strings.HasPrefix(workflowArgs[i+1], "--") {
 					i++ // Skip the value too
 				}

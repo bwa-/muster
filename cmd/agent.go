@@ -76,7 +76,8 @@ func init() {
 	rootCmd.AddCommand(agentCmd)
 
 	// Add flags
-	agentCmd.Flags().StringVar(&agentEndpoint, "endpoint", "", "Aggregator MCP endpoint URL (default: from config)")
+	defaultEndpoint := config.GetEndpointFromEnv("")
+	agentCmd.Flags().StringVar(&agentEndpoint, "endpoint", defaultEndpoint, "Aggregator MCP endpoint URL (env: MUSTER_ENDPOINT, default: from config)")
 	agentCmd.Flags().DurationVar(&agentTimeout, "timeout", 5*time.Minute, "Timeout for waiting for notifications")
 	agentCmd.Flags().BoolVar(&agentVerbose, "verbose", false, "Enable verbose logging (show keepalive messages)")
 	agentCmd.Flags().BoolVar(&agentNoColor, "no-color", false, "Disable colored output")
@@ -84,7 +85,10 @@ func init() {
 	agentCmd.Flags().BoolVar(&agentREPL, "repl", false, "Start interactive REPL mode")
 	agentCmd.Flags().BoolVar(&agentMCPServer, "mcp-server", false, "Run as MCP server (stdio transport)")
 	agentCmd.Flags().StringVar(&agentTransport, "transport", string(agent.TransportStreamableHTTP), "Transport to use (streamable-http, sse)")
-	agentCmd.Flags().StringVar(&agentConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+
+	// Config path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	agentCmd.Flags().StringVar(&agentConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
 	agentCmd.Flags().BoolVar(&agentDisableAutoSSO, "disable-auto-sso", false, "Disable automatic authentication with remote MCP servers after Muster auth")
 
 	// Mark flags as mutually exclusive

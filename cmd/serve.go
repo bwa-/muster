@@ -76,6 +76,11 @@ Configuration:
 
 // runServe is the main entry point for the serve command
 func runServe(cmd *cobra.Command, args []string) error {
+	// Validate config path early
+	if err := config.ValidateConfigPath(serveConfigPath); err != nil {
+		return fmt.Errorf("invalid configuration path '%s': %w", serveConfigPath, err)
+	}
+
 	// Create application configuration without cluster arguments
 	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath).
 		WithOAuth(serveOAuthEnabled, serveOAuthPublicURL, serveOAuthClientID).
@@ -104,7 +109,10 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveDebug, "debug", false, "Enable general debug logging")
 	serveCmd.Flags().BoolVar(&serveSilent, "silent", false, "Disable all output to the console")
 	serveCmd.Flags().BoolVar(&serveYolo, "yolo", false, "Disable denylist for destructive tool calls (use with caution)")
-	serveCmd.Flags().StringVar(&serveConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+
+	// Config path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	serveCmd.Flags().StringVar(&serveConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
 
 	// OAuth Proxy flags (for authenticating to remote MCP servers - ADR 004)
 	serveCmd.Flags().BoolVar(&serveOAuthEnabled, "oauth", false, "Enable OAuth proxy for remote MCP server authentication")

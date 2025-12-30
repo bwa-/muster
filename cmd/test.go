@@ -188,8 +188,10 @@ func init() {
 	testCmd.Flags().BoolVar(&testValidateScenarios, "validate-scenarios", false, "Validate test scenarios against API schema")
 	testCmd.Flags().StringVar(&testSchemaInput, "schema-input", "schema.json", "Input schema file for validation")
 
-	// Muster configuration path flag
-	testCmd.Flags().StringVar(&testMusterConfigPath, "config-path", config.GetDefaultConfigPathOrPanic(), "Configuration directory")
+	// Muster configuration path flag with environment variable support
+	// Config path flag with environment variable support
+	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
+	testCmd.Flags().StringVar(&testMusterConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
 
 	// Flag to keep temporary config for debugging
 	testCmd.Flags().BoolVar(&testKeepTempConfig, "keep-temp-config", false, "Keep temporary config directory after test execution for debugging")
@@ -309,7 +311,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 		}
 
 		if testDebug {
-			fmt.Printf("🔧 Starting mock MCP server with config '%s' (stdio transport)...\n", testMockConfig)
+			fmt.Printf("� Starting mock MCP server with config '%s' (stdio transport)...\n", testMockConfig)
 		}
 
 		if err := mockServer.Start(ctx); err != nil {
@@ -382,11 +384,11 @@ func runTest(cmd *cobra.Command, args []string) error {
 
 	if len(scenarios) == 0 {
 		fmt.Printf("⚠️  No test scenarios found in %s\n", scenarioPath)
-		fmt.Printf("💡 Available test scenario files:\n")
+		fmt.Printf("� Available test scenario files:\n")
 		fmt.Printf("   • internal/testing/scenarios/serviceclass_basic.yaml\n")
 		fmt.Printf("   • internal/testing/scenarios/workflow_basic.yaml\n")
 		fmt.Printf("\n")
-		fmt.Printf("📚 For more information, see:\n")
+		fmt.Printf("� For more information, see:\n")
 		fmt.Printf("   • docs/behavioral-scenarios/\n")
 		return nil
 	}
@@ -407,7 +409,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 
 func runSchemaGeneration(ctx context.Context, cmd *cobra.Command, args []string) error {
 	if testVerbose || testDebug {
-		fmt.Printf("🔧 Starting API schema generation for muster serve...\n")
+		fmt.Printf("� Starting API schema generation for muster serve...\n")
 	}
 
 	// Create timeout context for schema generation
@@ -421,7 +423,7 @@ func runSchemaGeneration(ctx context.Context, cmd *cobra.Command, args []string)
 	}
 
 	if testVerbose || testDebug {
-		fmt.Printf("🚀 Creating muster serve instance for schema generation...\n")
+		fmt.Printf("� Creating muster serve instance for schema generation...\n")
 	}
 
 	// Create the muster serve instance
@@ -450,7 +452,7 @@ func runSchemaGeneration(ctx context.Context, cmd *cobra.Command, args []string)
 	}
 
 	if testVerbose || testDebug {
-		fmt.Printf("🔗 Connected to muster serve instance\n")
+		fmt.Printf("� Connected to muster serve instance\n")
 	}
 
 	// Generate the schema
@@ -476,7 +478,7 @@ func runSchemaGeneration(ctx context.Context, cmd *cobra.Command, args []string)
 // generateAPISchema generates a JSON schema for the core API tools
 func generateAPISchema(ctx context.Context, client testing.MCPTestClient, verbose, debug bool) (map[string]interface{}, error) {
 	if verbose || debug {
-		fmt.Printf("🔍 Discovering available tools with schemas...\n")
+		fmt.Printf("� Discovering available tools with schemas...\n")
 	}
 
 	// Get all available tools with their full schemas
@@ -486,7 +488,7 @@ func generateAPISchema(ctx context.Context, client testing.MCPTestClient, verbos
 	}
 
 	if verbose || debug {
-		fmt.Printf("📋 Found %d tools with schemas\n", len(allTools))
+		fmt.Printf("� Found %d tools with schemas\n", len(allTools))
 	}
 
 	// Filter for core_* tools and build schemas
@@ -494,7 +496,7 @@ func generateAPISchema(ctx context.Context, client testing.MCPTestClient, verbos
 	for _, tool := range allTools {
 		if strings.HasPrefix(tool.Name, "core_") {
 			if verbose || debug {
-				fmt.Printf("🔧 Processing tool: %s\n", tool.Name)
+				fmt.Printf("� Processing tool: %s\n", tool.Name)
 			}
 
 			schema := convertMCPToolToSchema(tool, verbose, debug)
@@ -549,7 +551,7 @@ func convertMCPToolToSchema(tool mcp.Tool, verbose, debug bool) map[string]inter
 		if tool.InputSchema.Properties != nil {
 			propertiesCount = len(tool.InputSchema.Properties)
 		}
-		fmt.Printf("  📝 Tool %s has %d properties\n", tool.Name, propertiesCount)
+		fmt.Printf("  � Tool %s has %d properties\n", tool.Name, propertiesCount)
 	}
 
 	return schema
@@ -582,7 +584,7 @@ func getValueOrDefault(value, defaultValue string) string {
 // runScenarioValidation validates test scenarios against the API schema
 func runScenarioValidation(ctx context.Context, cmd *cobra.Command, args []string) error {
 	if testVerbose || testDebug {
-		fmt.Printf("🔍 Starting test scenario validation against API schema...\n")
+		fmt.Printf("� Starting test scenario validation against API schema...\n")
 	}
 
 	// Load the schema first to validate it exists
@@ -613,7 +615,7 @@ func runScenarioValidation(ctx context.Context, cmd *cobra.Command, args []strin
 	}
 
 	if testVerbose || testDebug {
-		fmt.Printf("📋 Found %d test scenarios to validate\n", len(scenarios))
+		fmt.Printf("� Found %d test scenarios to validate\n", len(scenarios))
 	}
 
 	// Perform detailed validation using shared logic

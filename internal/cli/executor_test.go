@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"muster/internal/agent"
@@ -31,13 +33,26 @@ func TestNewToolExecutor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.options.ConfigPath = "/tmp/muster-test"
+			// Create a valid temporary config directory for testing
+			tmpDir := t.TempDir()
+			tt.options.ConfigPath = tmpDir
+			
+			// Create minimal config file for testing
+			configContent := `---
+aggregator:
+  transport: streamable-http
+  http:
+    endpoint: http://localhost:8080
+`
+			err := os.WriteFile(filepath.Join(tmpDir, "config.yaml"), []byte(configContent), 0644)
+			assert.NoError(t, err)
+			
 			executor, err := NewToolExecutor(tt.options)
 
 			// The test can pass or fail depending on whether the server is running
 			// This is expected behavior since NewToolExecutor checks server health
 			if err != nil {
-				// Server is not running - this is expected in some test environments
+				// Server is not running - this is expected in most test environments
 				assert.Error(t, err)
 				assert.Nil(t, executor)
 				assert.Contains(t, err.Error(), "muster server is not running")

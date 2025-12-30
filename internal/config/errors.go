@@ -1,8 +1,18 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+)
+
+// Common configuration errors
+var (
+	ErrConfigPathRequired     = errors.New("configuration path is required")
+	ErrConfigPathNotFound     = errors.New("configuration path does not exist")
+	ErrConfigPathNotDirectory = errors.New("configuration path is not a directory")
+	ErrInvalidOutputFormat    = errors.New("invalid output format (must be table, json, or yaml)")
+	ErrInvalidLogLevel        = errors.New("invalid log level (must be debug, info, warn, or error)")
 )
 
 // ConfigurationError represents a structured error that occurs during configuration loading
