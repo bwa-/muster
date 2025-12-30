@@ -622,9 +622,11 @@ func (f *filesystemClient) ListWorkflows(ctx context.Context, namespace string) 
 		workflow, err := f.GetWorkflow(ctx, name, namespace)
 		if err != nil {
 			// Log error but continue with other files - this prevents one bad file from breaking everything
-			logging.Error("fs-client", err, "Failed to load Workflow %s", entry.Name())
+			logging.Error("fs-client", err, "Failed to load Workflow %s - validation errors", entry.Name())
+			logging.Warn("fs-client", "Skipping workflow %s due to validation failure. Check logs above for details.", name)
 			continue
 		}
+		logging.Debug("fs-client", "Successfully loaded Workflow: %s", name)
 		workflows = append(workflows, *workflow)
 	}
 

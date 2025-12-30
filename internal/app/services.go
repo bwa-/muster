@@ -429,17 +429,23 @@ func validateConfigFiles(musterClient client.MusterClient) error {
 		return fmt.Errorf("failed to load MCPServers: %w", err)
 	}
 	if len(mcpServers) > 0 {
-		logging.Debug("Validation", "Validated %d MCPServer(s)", len(mcpServers))
+		logging.Info("Validation", "Loaded %d MCPServer(s)", len(mcpServers))
+		for _, server := range mcpServers {
+			logging.Debug("Validation", "  ✓ MCPServer: %s (type: %s)", server.Name, server.Spec.Type)
+		}
 	}
 
-	// Validate all Workflows  
+	// Validate all Workflows
 	// Note: List methods log individual file errors but don't fail
 	workflows, err := musterClient.ListWorkflows(ctx, "default")
 	if err != nil {
 		return fmt.Errorf("failed to load Workflows: %w", err)
 	}
 	if len(workflows) > 0 {
-		logging.Debug("Validation", "Validated %d Workflow(s)", len(workflows))
+		logging.Info("Validation", "Loaded %d Workflow(s)", len(workflows))
+		for _, wf := range workflows {
+			logging.Info("Validation", "  ✓ Workflow: %s (%d steps)", wf.Name, len(wf.Spec.Steps))
+		}
 	}
 
 	return nil
