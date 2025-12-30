@@ -191,9 +191,58 @@ spec:
                         for this step.
                       minLength: 1
                       type: string
+                    forEach:
+                      description: ForEach enables iteration over a collection, executing
+                        the step template for each item.
+                      properties:
+                        items:
+                          description: Items specifies the collection to iterate over
+                            (can be a template expression or array).
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                        step:
+                          description: Step defines the step template to execute for
+                            each item.
+                          properties:
+                            allowFailure:
+                              default: false
+                              description: AllowFailure indicates whether a single
+                                iteration is allowed to fail.
+                              type: boolean
+                            args:
+                              additionalProperties:
+                                type: object
+                                x-kubernetes-preserve-unknown-fields: true
+                              description: Args provides arguments for each iteration
+                                (can reference {{.item}}).
+                              type: object
+                            description:
+                              description: Description provides documentation for the
+                                step template.
+                              type: string
+                            id:
+                              description: ID is a unique identifier for this step
+                                template.
+                              type: string
+                            store:
+                              default: false
+                              description: Store indicates whether each iteration's
+                                result should be stored.
+                              type: boolean
+                            tool:
+                              description: Tool specifies the name of the tool to execute
+                                for each iteration.
+                              type: string
+                          required:
+                          - id
+                          - tool
+                          type: object
+                      required:
+                      - items
+                      - step
+                      type: object
                   required:
                   - id
-                  - tool
                   type: object
                 minItems: 1
                 type: array

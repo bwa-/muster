@@ -1,0 +1,96 @@
+---
+# Example workflow demonstrating forEach loop functionality
+# This workflow deploys multiple microservices using a forEach loop
+apiVersion: muster.giantswarm.io/v1alpha1
+kind: Workflow
+metadata:
+  name: deploy-microservices
+  namespace: default
+spec:
+  name: deploy-microservices
+  description: |
+    Deploys multiple microservices using forEach loops.
+    Demonstrates iteration over a collection with templated arguments.
+  
+  # Input arguments
+  args:
+    microservices:
+      type: array
+      required: true
+      description: List of microservices to deploy with name, version, and config
+    environment:
+      type: string
+      required: true
+      description: Target environment (dev, staging, production)
+  
+  # Workflow steps
+  steps:
+    # Step 1: Setup environment
+    - id: setup_environment
+      tool: kubectl_create_namespace
+      args:
+        namespace: "{{.input.environment}}"
+      description: Create namespace for the environment
+    
+    # Step 2: Deploy each microservice using forEach
+    - id: deploy_all_services
+      forEach:
+        items: "{{.input.microservices}}"
+        step:
+          id: deploy_service
+          tool: kubectl_apply
+          args:
+            name: "{{.item.name}}"
+            version: "{{.item.version}}"
+            namespace: "{{.input.environment}}"
+            config: "{{.item.config}}"
+          description: Deploy microservice
+          store: true
+    
+    # Step 3: Verify all deployments
+    - id: verify_deployments
+      tool: kubectl_get_pods
+      args:
+        namespace: "{{.input.environment}}"
+      description: Verify all pods are running
+
+---
+# Example usage with actual data:
+#
+# Input arguments:
+# {
+#   "environment": "staging",
+#   "microservices": [
+#     {
+#       "name": "frontend",
+#       "version": "1.2.0",
+#       "config": {
+#         "replicas": 2,
+#         "port": 3000
+#       }
+#     },
+#     {
+#       "name": "backend",
+#       "version": "2.0.1",
+#       "config": {
+#         "replicas": 3,
+#         "port": 8080
+#       }
+#     },
+#     {
+#       "name": "database",
+#       "version": "3.1.4",
+#       "config": {
+#         "replicas": 1,
+#         "port": 5432
+#       }
+#     }
+#   ]
+# }
+#
+# This will expand to:
+# - setup_environment (create namespace)
+# - deploy_service_0 (frontend with version 1.2.0)
+# - deploy_service_1 (backend with version 2.0.1)
+# - deploy_service_2 (database with version 3.1.4)
+# - verify_deployments (check all pods)

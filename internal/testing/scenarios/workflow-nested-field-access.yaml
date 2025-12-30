@@ -1,0 +1,37 @@
+name: "workflow-nested-field-access"
+category: "behavioral"
+concept: "workflow"
+tags: ["workflow", "run", "context", "store", "nested", "core-api"]
+timeout: "1m"
+
+pre_configuration:
+  workflows:
+  - name: "nested-access-workflow"
+    config:
+      name: "nested-access-workflow"
+      description: "Test nested field access from stored step results"
+      steps:
+        - id: "get_list"
+          tool: "core_service_list"
+          store: true
+        - id: "echo_total"
+          tool: "x_echo-provider_echo"
+          args: { text: "Total services: {{ .results.get_list.total }}" }
+          store: true
+        - id: "echo_first_service"
+          tool: "x_echo-provider_echo"
+          args: { text: "First service: {{ index .results.get_list.services 0 }}" }
+          store: true
+  mcp_servers:
+  - name: "echo-provider"
+    config:
+      tools:
+      - name: "echo"
+        responses: [ { response: { said: "{{ .text }}" } } ]
+steps:
+- id: "run-nested-access"
+  tool: "workflow_nested-access-workflow"
+  args: {}
+  expected:
+    success: true
+    contains: ["Total services:", "First service:", "said"]

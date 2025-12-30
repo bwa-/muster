@@ -90,10 +90,52 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 	}
 	logging.Debug("WorkflowExecutor", "Initial execution context: input=%+v, results=%+v", execCtx.input, execCtx.results)
 
+	// Expand forEach steps before execution
+	expandedSteps, err := we.expandForEachSteps(workflow.Steps, execCtx)
+	if err != nil {
+		logging.Error("WorkflowExecutor", err, "Failed to expand forEach steps")
+
+		// Build partial result showing which forEach step failed
+		steps := []map[string]interface{}{}
+		for _, step := range workflow.Steps {
+			if step.ForEach != nil {
+				// This forEach step likely failed expansion
+				steps = append(steps, map[string]interface{}{
+					"id":     step.ID,
+					"tool":   step.ForEach.Step.Tool, // Show the actual tool from forEach template
+					"status": "failed",
+					"error":  fmt.Sprintf("forEach expansion failed: %v", err),
+				})
+			} else {
+				steps = append(steps, map[string]interface{}{
+					"id":     step.ID,
+					"tool":   step.Tool,
+					"status": "not_executed",
+				})
+			}
+		}
+
+		partialResult := map[string]interface{}{
+			"execution_id":  "",
+			"workflow":      workflow.Name,
+			"status":        "failed",
+			"input":         execCtx.input,
+			"steps":         steps,
+			"template_vars": execCtx.templateVars,
+		}
+
+		partialJSON, _ := json.Marshal(partialResult)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{mcp.NewTextContent(string(partialJSON))},
+			IsError: true,
+		}, fmt.Errorf("failed to expand forEach steps: %w", err)
+	}
+	logging.Debug("WorkflowExecutor", "Expanded %d steps to %d steps", len(workflow.Steps), len(expandedSteps))
+
 	// Execute each step
 	var lastStepResult *mcp.CallToolResult
-	for i, step := range workflow.Steps {
-		logging.Debug("WorkflowExecutor", "Executing step %d/%d: %s, tool: %s", i+1, len(workflow.Steps), step.ID, step.Tool)
+	for i, step := range expandedSteps {
+		logging.Debug("WorkflowExecutor", "Executing step %d/%d: %s, tool: %s", i+1, len(expandedSteps), step.ID, step.Tool)
 
 		// Check if step has a condition
 		var conditionEvaluation *bool
@@ -356,8 +398,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				"allow_failure": step.AllowFailure,
 			})
 
-			// Record the failed step metadata
-			execCtx.stepMetadata = append(execCtx.stepMetadata, stepMetadata{
+			failedMeta := stepMetadata{
 				ID:                  step.ID,
 				Tool:                step.Tool,
 				Store:               step.Store,
@@ -366,7 +407,8 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				ConditionEvaluation: conditionEvaluation,
 				ConditionResult:     conditionResult,
 				ConditionTool:       conditionTool,
-			})
+			}
+			execCtx.stepMetadata = append(execCtx.stepMetadata, failedMeta)
 
 			// If step allows failure, continue execution
 			if step.AllowFailure {
@@ -387,8 +429,8 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				continue
 			}
 
-			// Build clean partial result for failed workflows
-			steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, step.ID, err.Error())
+			// Build clean partial result for failed workflows with available tools
+			steps := we.buildStepsArrayWithAvailableTools(execCtx.stepMetadata, execCtx.results, step.ID, step.Tool, err.Error())
 
 			partialResult := map[string]interface{}{
 				"execution_id":  "", // Will be filled by manager
@@ -604,6 +646,80 @@ func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results
 	return steps
 }
 
+// buildStepsArrayWithAvailableTools builds the steps array and includes available tools for failed tool calls
+func (we *WorkflowExecutor) buildStepsArrayWithAvailableTools(stepMetadata []stepMetadata, results map[string]interface{}, failedStepID string, failedTool string, errorMessage string) []map[string]interface{} {
+	var steps []map[string]interface{}
+
+	// Get all available tools from aggregator
+	var availableTools []string
+	if aggregator := api.GetAggregator(); aggregator != nil {
+		availableTools = aggregator.GetAvailableTools()
+	}
+
+	// Group tools by category (core_, x_, workflow_)
+	toolsByCategory := map[string][]string{
+		"core":     []string{},
+		"external": []string{},
+		"workflow": []string{},
+	}
+
+	for _, tool := range availableTools {
+		if strings.HasPrefix(tool, "core_") {
+			toolsByCategory["core"] = append(toolsByCategory["core"], tool)
+		} else if strings.HasPrefix(tool, "x_") {
+			toolsByCategory["external"] = append(toolsByCategory["external"], tool)
+		} else if strings.HasPrefix(tool, "workflow_") {
+			toolsByCategory["workflow"] = append(toolsByCategory["workflow"], tool)
+		}
+	}
+
+	for _, stepMeta := range stepMetadata {
+		step := map[string]interface{}{
+			"id":     stepMeta.ID,
+			"tool":   stepMeta.Tool,
+			"status": stepMeta.Status,
+		}
+
+		// Add condition information if present
+		if stepMeta.ConditionEvaluation != nil {
+			step["condition_evaluation"] = *stepMeta.ConditionEvaluation
+		}
+		if stepMeta.ConditionResult != nil {
+			step["condition_result"] = stepMeta.ConditionResult
+		}
+		if stepMeta.ConditionTool != "" {
+			step["condition_tool"] = stepMeta.ConditionTool
+		}
+
+		// Add allow_failure flag if true
+		if stepMeta.AllowFailure {
+			step["allow_failure"] = stepMeta.AllowFailure
+		}
+
+		// Add result if available
+		if stepMeta.Store && results[stepMeta.ID] != nil {
+			step["result"] = results[stepMeta.ID]
+		}
+
+		// Add error if this is the failed step
+		if failedStepID != "" && stepMeta.ID == failedStepID {
+			step["error"] = fmt.Sprintf("tool '%s' is not available: %s", failedTool, errorMessage)
+			
+			// Add available tools to help user find correct name
+			step["available_tools"] = map[string]interface{}{
+				"core":     toolsByCategory["core"],
+				"external": toolsByCategory["external"],
+				"workflow": toolsByCategory["workflow"],
+				"total":    len(availableTools),
+			}
+		}
+
+		steps = append(steps, step)
+	}
+
+	return steps
+}
+
 // executionContext holds the state during workflow execution
 type executionContext struct {
 	input        map[string]interface{} // Original input arguments
@@ -611,6 +727,7 @@ type executionContext struct {
 	results      map[string]interface{} // Results from previous steps
 	templateVars []string               // Track template variables used
 	stepMetadata []stepMetadata         // Track step metadata
+	item         interface{}            // Current item in forEach loop (nil if not in forEach)
 }
 
 // validateInputs validates the input arguments against the args definition
@@ -772,6 +889,7 @@ func (we *WorkflowExecutor) resolveTemplate(templateStr string, ctx *executionCo
 		"vars":    ctx.variables,
 		"results": ctx.results,
 		"context": ctx.results, // Alias for results to support .context.variable syntax
+		"item":    ctx.item,    // Current forEach item (nil if not in forEach)
 	}
 
 	logging.Debug("WorkflowExecutor", "Template context results (raw): %v", templateCtx["results"])
@@ -808,7 +926,7 @@ func (we *WorkflowExecutor) isSimpleVariableAccess(templateStr string) bool {
 	inner := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
 
 	// Check if it's a simple dot notation access
-	return strings.HasPrefix(inner, ".input.") || strings.HasPrefix(inner, ".results.") || strings.HasPrefix(inner, ".vars.")
+	return strings.HasPrefix(inner, ".input.") || strings.HasPrefix(inner, ".results.") || strings.HasPrefix(inner, ".vars.") || strings.HasPrefix(inner, ".item")
 }
 
 // getOriginalValue extracts the original value from the context based on the template path
@@ -832,6 +950,14 @@ func (we *WorkflowExecutor) getOriginalValue(templateStr string, ctx *executionC
 	} else if strings.HasPrefix(inner, ".vars.") {
 		key := inner[6:] // Remove ".vars."
 		return ctx.variables[key]
+	} else if inner == ".item" {
+		return ctx.item
+	} else if strings.HasPrefix(inner, ".item.") {
+		// Handle nested item properties like .item.name
+		key := inner[6:] // Remove ".item."
+		if itemMap, ok := ctx.item.(map[string]interface{}); ok {
+			return itemMap[key]
+		}
 	}
 
 	return nil
@@ -927,4 +1053,97 @@ func (we *WorkflowExecutor) valuesEqual(actual, expected interface{}) bool {
 	expectedStr := fmt.Sprintf("%v", expected)
 
 	return actualStr == expectedStr
+}
+
+// expandForEachSteps expands steps with forEach configurations into individual steps
+func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx *executionContext) ([]api.WorkflowStep, error) {
+	var expandedSteps []api.WorkflowStep
+
+	for _, step := range steps {
+		// If step has no forEach, keep it as-is
+		if step.ForEach == nil {
+			expandedSteps = append(expandedSteps, step)
+			continue
+		}
+
+		logging.Debug("WorkflowExecutor", "Expanding forEach step: %s", step.ID)
+
+		// Resolve the items collection
+		items, err := we.resolveForEachItems(step.ForEach.Items, execCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve forEach items for step %s: %w", step.ID, err)
+		}
+
+		// Validate that items is an array
+		itemsArray, ok := items.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("forEach items for step %s must be an array, got %T", step.ID, items)
+		}
+
+		logging.Debug("WorkflowExecutor", "ForEach step %s has %d items", step.ID, len(itemsArray))
+
+		// Create a step for each item
+		for idx, item := range itemsArray {
+			// Create a temporary execution context with the current item
+			itemCtx := &executionContext{
+				input:        execCtx.input,
+				variables:    execCtx.variables,
+				results:      execCtx.results,
+				templateVars: execCtx.templateVars,
+				stepMetadata: execCtx.stepMetadata,
+				item:         item, // Add current item to context
+			}
+
+			// Resolve arguments with item context
+			resolvedArgs, err := we.resolveArguments(step.ForEach.Step.Args, itemCtx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve forEach step args for %s[%d]: %w", step.ID, idx, err)
+			}
+
+			// Create expanded step with metadata for error reporting
+			expandedStep := api.WorkflowStep{
+				ID:           fmt.Sprintf("%s_%d", step.ForEach.Step.ID, idx),
+				Tool:         step.ForEach.Step.Tool,
+				Args:         resolvedArgs,
+				Store:        step.ForEach.Step.Store,
+				AllowFailure: step.ForEach.Step.AllowFailure,
+				Description:  fmt.Sprintf("%s (item %d/%d)", step.ForEach.Step.Description, idx+1, len(itemsArray)),
+				Metadata: map[string]interface{}{
+					"forEach_template": step.ForEach.Step.Tool,
+					"forEach_item":     item,
+					"forEach_index":    idx,
+				},
+			}
+
+			expandedSteps = append(expandedSteps, expandedStep)
+			logging.Debug("WorkflowExecutor", "Created forEach iteration step: %s", expandedStep.ID)
+		}
+	}
+
+	return expandedSteps, nil
+}
+
+// resolveForEachItems resolves the items collection for a forEach loop
+func (we *WorkflowExecutor) resolveForEachItems(items interface{}, execCtx *executionContext) (interface{}, error) {
+	// If items is a string, it might be a template expression
+	if itemsStr, ok := items.(string); ok {
+		resolved, err := we.resolveTemplate(itemsStr, execCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve items template: %w", err)
+		}
+		return resolved, nil
+	}
+
+	// If items is already an array, return it directly
+	if itemsArray, ok := items.([]interface{}); ok {
+		return itemsArray, nil
+	}
+
+	// Try to resolve as a value (might be a reference)
+	resolved, err := we.resolveValue(items, execCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve items value: %w", err)
+	}
+
+	return resolved, nil
 }

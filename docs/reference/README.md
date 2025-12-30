@@ -52,6 +52,18 @@ Technical reference for commands, APIs, and configurations. Find exact syntax, p
   - [Dynamic Workflow Execution](mcp-tools.md#dynamic-workflow-execution-tools) - `workflow_<name>` tools
   - [External Tools](mcp-tools.md#external-tools) - Tools from connected MCP servers
 
+### Workflow Features
+- **[forEach Loops and Text Transformation](forEach-and-text-transformation.md)** - Advanced workflow data processing
+  - [forEach Loops](forEach-and-text-transformation.md#foreach-loops) - Iterate over collections dynamically
+  - [Text Transformation](forEach-and-text-transformation.md#text-transformation) - Parse unstructured tool output
+  - [Combining Both](forEach-and-text-transformation.md#combining-foreach-and-text-transformation) - End-to-end examples
+  - [Best Practices](forEach-and-text-transformation.md#best-practices) - Production-ready patterns
+- **[core_workflow_transform_text Tool](core-transform-text.md)** - Text transformation tool reference
+  - [Extraction Operations](core-transform-text.md#extraction-operations) - Extract content from text
+  - [Modification Operations](core-transform-text.md#modification-operations) - Modify text content
+  - [Splitting/Filtering Operations](core-transform-text.md#splittingfiltering-operations) - Split and filter arrays
+  - [Common Patterns](core-transform-text.md#common-patterns) - Ready-to-use transformation recipes
+
 ### Configuration
 - **[Configuration Reference](configuration.md)** - Complete system configuration documentation
   - [Main Configuration](configuration.md#main-configuration-file) - Core system settings (aggregator, ports, transport)

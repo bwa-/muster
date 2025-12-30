@@ -125,6 +125,47 @@ type WorkflowConditionExpectation struct {
 	// - Multiple condition combinations (AND/OR logic)
 }
 
+// ForEachConfig defines the configuration for iterating over a collection in a workflow step.
+// When a step has a ForEach configuration, it will be expanded into multiple step executions,
+// one for each item in the specified collection.
+type ForEachConfig struct {
+	// Items specifies the collection to iterate over.
+	// Can be:
+	// - A template expression like "{{.microservices}}" that resolves to an array
+	// - A direct array value
+	// - A reference to a previous step result
+	Items interface{} `yaml:"items" json:"items"`
+
+	// Step defines the step template to execute for each item.
+	// The current item is available as {{.item}} in the step's arguments.
+	// For object items, fields are accessible as {{.item.fieldName}}.
+	Step WorkflowStepTemplate `yaml:"step" json:"step"`
+}
+
+// WorkflowStepTemplate defines a template for a step to be executed in a forEach loop.
+// This is similar to WorkflowStep but uses ID, Tool, and Args from the template.
+type WorkflowStepTemplate struct {
+	// ID is a unique identifier for this step template.
+	// Will be expanded to include iteration index (e.g., "deploy_service_0", "deploy_service_1")
+	ID string `yaml:"id" json:"id"`
+
+	// Tool specifies the name of the tool to execute for each iteration.
+	Tool string `yaml:"tool" json:"tool"`
+
+	// Args provides the arguments to pass to the tool for each iteration.
+	// Can reference {{.item}} for the current item or {{.item.field}} for object properties.
+	Args map[string]interface{} `yaml:"args,omitempty" json:"args,omitempty"`
+
+	// AllowFailure indicates whether a single iteration is allowed to fail without failing the workflow.
+	AllowFailure bool `yaml:"allow_failure,omitempty" json:"allow_failure,omitempty"`
+
+	// Store indicates whether each iteration's result should be stored.
+	Store bool `yaml:"store,omitempty" json:"store,omitempty"`
+
+	// Description provides documentation for the step template.
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
 // WorkflowStep defines a single step in a workflow execution.
 // Each step represents a tool call with its arguments, result processing,
 // and conditional execution logic.
@@ -161,6 +202,15 @@ type WorkflowStep struct {
 
 	// Description provides human-readable documentation for this step's purpose
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	// ForEach enables iteration over a collection, executing the step template for each item.
+	// When specified, this step becomes a forEach loop and Tool/Args are ignored.
+	// The step is expanded into multiple executions at runtime.
+	ForEach *ForEachConfig `yaml:"forEach,omitempty" json:"forEach,omitempty"`
+
+	// Metadata stores additional context about the step, such as forEach iteration information.
+	// This is used internally for error reporting and debugging.
+	Metadata map[string]interface{} `yaml:"-" json:"-"`
 }
 
 // WorkflowInputSchema defines the input argument schema for a workflow.

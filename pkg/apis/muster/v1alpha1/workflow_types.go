@@ -53,6 +53,57 @@ type WorkflowStep struct {
 	// Description provides human-readable documentation for this step's purpose.
 	// +kubebuilder:validation:MaxLength=500
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+
+	// ForEach enables iteration over a collection, executing the step template for each item.
+	// When specified, this step becomes a forEach loop and Tool/Args are ignored.
+	ForEach *ForEachConfig `json:"forEach,omitempty" yaml:"forEach,omitempty"`
+}
+
+// ForEachConfig defines a forEach loop configuration for iterating over collections.
+// This allows a single step definition to be executed multiple times,
+// one for each item in the specified collection.
+type ForEachConfig struct {
+	// Items specifies the collection to iterate over.
+	// Can be:
+	// - A template expression like "{{.microservices}}" that resolves to an array
+	// - A direct array value
+	// - A reference to a previous step result
+	Items *runtime.RawExtension `json:"items" yaml:"items"`
+
+	// Step defines the step template to execute for each item.
+	// The current item is available as {{.item}} in the step's arguments.
+	Step WorkflowStepTemplate `json:"step" yaml:"step"`
+}
+
+// WorkflowStepTemplate defines a template for a step to be executed in a forEach loop.
+type WorkflowStepTemplate struct {
+	// ID is a unique identifier for this step template.
+	// Will be expanded to include iteration index (e.g., "deploy_service_0", "deploy_service_1")
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern="^[a-zA-Z0-9_-]+$"
+	// +kubebuilder:validation:MaxLength=63
+	ID string `json:"id" yaml:"id"`
+
+	// Tool specifies the name of the tool to execute for each iteration.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Tool string `json:"tool" yaml:"tool"`
+
+	// Args provides the arguments to pass to the tool for each iteration.
+	// Can reference {{.item}} for the current item or {{.item.field}} for object properties.
+	Args map[string]*runtime.RawExtension `json:"args,omitempty" yaml:"args,omitempty"`
+
+	// AllowFailure indicates whether a single iteration is allowed to fail without failing the workflow.
+	// +kubebuilder:default=false
+	AllowFailure bool `json:"allowFailure,omitempty" yaml:"allowFailure,omitempty"`
+
+	// Store indicates whether each iteration's result should be stored.
+	// +kubebuilder:default=false
+	Store bool `json:"store,omitempty" yaml:"store,omitempty"`
+
+	// Description provides documentation for the step template.
+	// +kubebuilder:validation:MaxLength=500
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
 // WorkflowCondition defines execution conditions for workflow steps

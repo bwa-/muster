@@ -29,6 +29,10 @@ type Adapter struct {
 	executionTracker *ExecutionTracker
 	toolChecker      ToolAvailabilityChecker
 
+	// Tool discovery state tracking
+	toolsDiscovered bool         // true after first tool update event
+	discoveryMutex  sync.RWMutex // protects toolsDiscovered flag
+
 	// Prevent circular dependency during tool generation
 	generatingTools bool
 	mu              sync.RWMutex
@@ -58,10 +62,26 @@ func NewAdapterWithClient(musterClient client.MusterClient, namespace string, to
 	return adapter
 }
 
-// Register registers this adapter with the API layer
+// Register registers this adapter with the API layer and subscribes to tool updates
 func (a *Adapter) Register() {
 	api.RegisterWorkflow(a)
-	logging.Debug("WorkflowAdapter", "Registered workflow adapter with API layer")
+	api.SubscribeToToolUpdates(a)
+	logging.Debug("WorkflowAdapter", "Registered workflow adapter with API layer and subscribed to tool updates")
+}
+
+// OnToolsUpdated implements the ToolUpdateSubscriber interface
+// This method is called when tools become available or change
+func (a *Adapter) OnToolsUpdated(event api.ToolUpdateEvent) {
+	a.discoveryMutex.Lock()
+	wasDiscovered := a.toolsDiscovered
+	a.toolsDiscovered = true
+	a.discoveryMutex.Unlock()
+
+	if !wasDiscovered {
+		logging.Info("WorkflowAdapter", "Initial tool discovery complete: %d tools available", len(event.Tools))
+	} else {
+		logging.Debug("WorkflowAdapter", "Tool update received: %d tools available", len(event.Tools))
+	}
 }
 
 // ExecuteWorkflow executes a workflow and returns MCP result
@@ -81,7 +101,9 @@ func (a *Adapter) ExecuteWorkflow(ctx context.Context, workflowName string, args
 	workflow := a.convertCRDToWorkflow(workflowCRD)
 
 	// Check if workflow is available before execution
-	if !a.isWorkflowAvailable(workflow) {
+	missingTools := a.getMissingTools(workflow)
+	if len(missingTools) > 0 {
+		errorResponse := a.buildToolAvailabilityError(workflowName, missingTools)
 		// Generate workflow unavailable event with missing tools
 		missingTools := a.findMissingTools(workflow)
 		a.generateCRDEvent(workflowName, events.ReasonWorkflowUnavailable, events.EventData{
@@ -90,7 +112,7 @@ func (a *Adapter) ExecuteWorkflow(ctx context.Context, workflowName string, args
 		})
 
 		return &api.CallToolResult{
-			Content: []interface{}{fmt.Sprintf("workflow %s is not available (missing required tools)", workflowName)},
+			Content: []interface{}{errorResponse},
 			IsError: true,
 		}, nil
 	}
@@ -562,6 +584,10 @@ func (a *Adapter) convertWorkflowSteps(crdSteps []musterv1alpha1.WorkflowStep) [
 			step.Condition = a.convertWorkflowCondition(crdStep.Condition)
 		}
 
+		if crdStep.ForEach != nil {
+			step.ForEach = a.convertForEachConfig(crdStep.ForEach)
+		}
+
 		steps = append(steps, step)
 	}
 	return steps
@@ -585,9 +611,51 @@ func (a *Adapter) convertWorkflowStepsToCRD(steps []api.WorkflowStep) []musterv1
 			crdStep.Condition = a.convertWorkflowConditionToCRD(step.Condition)
 		}
 
+		if step.ForEach != nil {
+			crdStep.ForEach = a.convertForEachConfigToCRD(step.ForEach)
+		}
+
 		crdSteps = append(crdSteps, crdStep)
 	}
 	return crdSteps
+}
+
+// convertForEachConfig converts CRD ForEachConfig to internal format
+func (a *Adapter) convertForEachConfig(crdForEach *musterv1alpha1.ForEachConfig) *api.ForEachConfig {
+	if crdForEach == nil {
+		return nil
+	}
+
+	return &api.ForEachConfig{
+		Items: a.convertRawExtension(crdForEach.Items),
+		Step: api.WorkflowStepTemplate{
+			ID:           crdForEach.Step.ID,
+			Tool:         crdForEach.Step.Tool,
+			Args:         a.convertRawExtensionMap(crdForEach.Step.Args),
+			AllowFailure: crdForEach.Step.AllowFailure,
+			Store:        crdForEach.Step.Store,
+			Description:  crdForEach.Step.Description,
+		},
+	}
+}
+
+// convertForEachConfigToCRD converts internal ForEachConfig to CRD format
+func (a *Adapter) convertForEachConfigToCRD(forEach *api.ForEachConfig) *musterv1alpha1.ForEachConfig {
+	if forEach == nil {
+		return nil
+	}
+
+	return &musterv1alpha1.ForEachConfig{
+		Items: a.convertToRawExtension(forEach.Items),
+		Step: musterv1alpha1.WorkflowStepTemplate{
+			ID:           forEach.Step.ID,
+			Tool:         forEach.Step.Tool,
+			Args:         a.convertToRawExtensionMap(forEach.Step.Args),
+			AllowFailure: forEach.Step.AllowFailure,
+			Store:        forEach.Step.Store,
+			Description:  forEach.Step.Description,
+		},
+	}
 }
 
 // convertWorkflowCondition converts CRD WorkflowCondition to internal format
@@ -724,36 +792,115 @@ func (a *Adapter) convertToRawExtensionMap(valueMap map[string]interface{}) map[
 
 // isWorkflowAvailable checks if a workflow has all required tools available
 func (a *Adapter) isWorkflowAvailable(workflow *api.Workflow) bool {
+	// During startup before tools are discovered, assume workflows are available
+	// This prevents false negatives when workflows are loaded before MCP servers connect
+	a.discoveryMutex.RLock()
+	toolsReady := a.toolsDiscovered
+	a.discoveryMutex.RUnlock()
+
+	if !toolsReady {
+		return true // Defer validation until after tool discovery
+	}
+
+	return len(a.getMissingTools(workflow)) == 0
+}
+
+// getMissingTools returns a list of tools that are required but not available
+func (a *Adapter) getMissingTools(workflow *api.Workflow) []string {
 	a.mu.RLock()
 	if a.generatingTools {
 		a.mu.RUnlock()
 		// If we're in the middle of generating tools, assume available to avoid circular dependency
-		return true
+		return nil
 	}
 	a.mu.RUnlock()
 
-	if a.toolChecker == nil {
-		return true // Assume available if no tool checker
+	// During startup before tools are discovered, assume all tools are available
+	// This prevents false negatives when workflows are loaded before MCP servers connect
+	a.discoveryMutex.RLock()
+	toolsReady := a.toolsDiscovered
+	a.discoveryMutex.RUnlock()
+
+	if !toolsReady {
+		return nil // Defer validation until after tool discovery
 	}
+
+	if a.toolChecker == nil {
+		return nil // Assume available if no tool checker
+	}
+
+	var missingTools []string
 
 	// Check each step's tool availability
 	for _, step := range workflow.Steps {
 		// Regular step with direct tool
 		if step.Tool != "" {
 			if !a.toolChecker.IsToolAvailable(step.Tool) {
-				return false
+				missingTools = append(missingTools, step.Tool)
 			}
 		}
 
 		// forEach step - check the tool in the forEach template
 		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
 			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
-				return false
+				missingTools = append(missingTools, step.ForEach.Step.Tool)
 			}
 		}
 	}
 
-	return true
+	return missingTools
+}
+
+// buildToolAvailabilityError creates a detailed JSON error response showing missing tools and all available tools
+func (a *Adapter) buildToolAvailabilityError(workflowName string, missingTools []string) string {
+	// Get all available tools from aggregator
+	var availableTools []string
+	if aggregator := api.GetAggregator(); aggregator != nil {
+		availableTools = aggregator.GetAvailableTools()
+	}
+
+	// Group tools by category (core_, x_, workflow_)
+	toolsByCategory := map[string][]string{
+		"core":     []string{},
+		"external": []string{},
+		"workflow": []string{},
+		"other":    []string{},
+	}
+
+	for _, tool := range availableTools {
+		if strings.HasPrefix(tool, "core_") {
+			toolsByCategory["core"] = append(toolsByCategory["core"], tool)
+		} else if strings.HasPrefix(tool, "x_") {
+			toolsByCategory["external"] = append(toolsByCategory["external"], tool)
+		} else if strings.HasPrefix(tool, "workflow_") {
+			toolsByCategory["workflow"] = append(toolsByCategory["workflow"], tool)
+		} else {
+			toolsByCategory["other"] = append(toolsByCategory["other"], tool)
+		}
+	}
+
+	// Build error response
+	errorData := map[string]interface{}{
+		"error":         fmt.Sprintf("workflow '%s' is not available", workflowName),
+		"missing_tools": missingTools,
+		"available_tools": map[string]interface{}{
+			"core_tools":    toolsByCategory["core"],
+			"external_mcps": toolsByCategory["external"],
+			"workflows":     toolsByCategory["workflow"],
+			"other":         toolsByCategory["other"],
+			"total_count":   len(availableTools),
+		},
+		"hint": "Check if the required MCP servers are running and registered",
+	}
+
+	// Marshal to JSON
+	jsonData, err := json.MarshalIndent(errorData, "", "  ")
+	if err != nil {
+		// Fallback to simple error message
+		return fmt.Sprintf("workflow %s is not available (missing required tools: %s)", workflowName, strings.Join(missingTools, ", "))
+	}
+
+	return string(jsonData)
 }
 
 // findMissingTools returns a list of tools that are not available for a workflow
@@ -1034,6 +1181,26 @@ func (a *Adapter) GetTools() []api.ToolMetadata {
 				},
 			},
 		},
+		// Text transformation utility tool
+		{
+			Name:        "workflow_transform_text",
+			Description: "Apply a series of text transformations to convert unstructured text into structured data. Useful for parsing tool outputs into arrays or modifying text step-by-step.",
+			Args: []api.ArgMetadata{
+				{
+					Name:        "input",
+					Type:        "string",
+					Required:    true,
+					Description: "Input text to transform",
+				},
+				{
+					Name:        "steps",
+					Type:        "array",
+					Required:    true,
+					Description: "Array of transformation steps to apply sequentially",
+					Schema:      getTextTransformStepsSchema(),
+				},
+			},
+		},
 	}
 
 	// Add workflow execution tools (action_*) dynamically
@@ -1070,6 +1237,9 @@ func (a *Adapter) ExecuteTool(ctx context.Context, toolName string, args map[str
 		return a.handleExecutionList(ctx, args)
 	case toolName == "workflow_execution_get":
 		return a.handleExecutionGet(ctx, args)
+	// TODO: Re-enable when text transformation is fully implemented
+	// case toolName == "workflow_transform_text":
+	// 	return a.handleTransformText(args)
 
 	case strings.HasPrefix(toolName, "action_"):
 		// Execute workflow
@@ -1173,6 +1343,14 @@ func (a *Adapter) handleGet(args map[string]interface{}) (*api.CallToolResult, e
 		IsError: false,
 	}, nil
 }
+
+// TODO: Re-implement text transformation when ready
+// func (a *Adapter) handleTransformText(args map[string]interface{}) (*api.CallToolResult, error) {
+// 	return &api.CallToolResult{
+// 		Content: []interface{}{"Text transformation not yet implemented"},
+// 		IsError: true,
+// 	}, nil
+// }
 
 func (a *Adapter) handleCreate(args map[string]interface{}) (*api.CallToolResult, error) {
 	var req api.WorkflowCreateRequest
@@ -1846,8 +2024,87 @@ func getWorkflowStepsSchema() map[string]interface{} {
 					"type":        "string",
 					"description": "Human-readable documentation for this step's purpose",
 				},
+				"forEach": map[string]interface{}{
+					"type":                 "object",
+					"description":          "Enables iteration over a collection, executing the step template for each item",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"items": map[string]interface{}{
+							"description": "Collection to iterate over (can be a template expression like {{.microservices}} or direct array)",
+						},
+						"step": map[string]interface{}{
+							"type":                 "object",
+							"description":          "Step template to execute for each item (current item available as {{.item}})",
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"id": map[string]interface{}{
+									"type":        "string",
+									"description": "Unique identifier for this step template (will be expanded with iteration index)",
+								},
+								"tool": map[string]interface{}{
+									"type":        "string",
+									"description": "Name of the tool to execute for each iteration",
+								},
+								"args": map[string]interface{}{
+									"type":        "object",
+									"description": "Arguments for each iteration (can reference {{.item}} or {{.item.field}})",
+								},
+								"allow_failure": map[string]interface{}{
+									"type":        "boolean",
+									"description": "Whether a single iteration is allowed to fail",
+								},
+								"store": map[string]interface{}{
+									"type":        "boolean",
+									"description": "Whether each iteration's result should be stored",
+								},
+								"description": map[string]interface{}{
+									"type":        "string",
+									"description": "Human-readable documentation for the step template",
+								},
+							},
+							"required": []string{"id", "tool"},
+						},
+					},
+					"required": []string{"items", "step"},
+				},
 			},
-			"required": []string{"id", "tool"},
+			"required": []string{"id"},
+		},
+		"minItems": 1,
+	}
+}
+
+// getTextTransformStepsSchema returns the detailed schema definition for text transformation steps
+func getTextTransformStepsSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": "Array of text transformation steps to apply sequentially. Each step transforms the output of the previous step.",
+		"items": map[string]interface{}{
+			"type":                 "object",
+			"description":          "Individual transformation step configuration",
+			"additionalProperties": false,
+			"properties": map[string]interface{}{
+				"type": map[string]interface{}{
+					"type":        "string",
+					"description": "Type of transformation to apply",
+					"enum": []string{
+						// Extraction operations
+						"extract_lines_starting_with", "extract_lines_matching", "extract_between", "extract_after", "extract_before",
+						// Modification operations
+						"replace", "replace_regex", "trim", "trim_prefix", "trim_suffix", "trim_each", "to_lower", "to_upper",
+						// Splitting/filtering operations
+						"split", "split_lines", "remove_empty", "remove_duplicates",
+					},
+				},
+				"args": map[string]interface{}{
+					"type":        "object",
+					"description": "Arguments for the transformation step (depends on type)",
+					"additionalProperties": map[string]interface{}{
+						"description": "Transformation-specific argument value",
+					},
+				},
+			},
+			"required": []string{"type"},
 		},
 		"minItems": 1,
 	}
@@ -1955,3 +2212,5 @@ func getBoolFromMap(data map[string]interface{}, key string) bool {
 	}
 	return false
 }
+
+// getTextTransformStepsSchema returns the detailed schema definition for text transformation steps
