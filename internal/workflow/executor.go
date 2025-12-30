@@ -33,14 +33,15 @@ func (n *NoOpEventCallback) GenerateStepEvent(workflowName string, stepID string
 
 // stepMetadata holds metadata about an executed step for tracking purposes
 type stepMetadata struct {
-	ID                  string      // Original step ID from workflow definition
-	Tool                string      // Tool name used in the step
-	Store               bool        // Whether the step result was stored in workflow results
-	Status              string      // Step execution status: "completed", "skipped", "failed"
-	AllowFailure        bool        // Whether this step is allowed to fail without failing the workflow
-	ConditionEvaluation *bool       // Boolean result of condition evaluation (nil if no condition)
-	ConditionResult     interface{} // Actual result from condition tool call (nil if no condition)
-	ConditionTool       string      // Tool used for condition evaluation (empty if no condition)
+	ID                  string                 // Original step ID from workflow definition
+	Tool                string                 // Tool name used in the step
+	Store               bool                   // Whether the step result was stored in workflow results
+	Status              string                 // Step execution status: "completed", "skipped", "failed"
+	AllowFailure        bool                   // Whether this step is allowed to fail without failing the workflow
+	ConditionEvaluation *bool                  // Boolean result of condition evaluation (nil if no condition)
+	ConditionResult     interface{}            // Actual result from condition tool call (nil if no condition)
+	ConditionTool       string                 // Tool used for condition evaluation (empty if no condition)
+	ResolvedArgs        map[string]interface{} // Resolved arguments passed to the tool (nil for skipped steps)
 }
 
 // WorkflowExecutor executes workflow steps
@@ -330,8 +331,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 					AllowFailure:        step.AllowFailure,
 					ConditionEvaluation: conditionEvaluation,
 					ConditionResult:     conditionResult,
-					ConditionTool:       conditionTool,
-				})
+					ConditionTool:       conditionTool, ResolvedArgs: nil})
 
 				// Continue to next step
 				continue
@@ -373,8 +373,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				AllowFailure:        step.AllowFailure,
 				ConditionEvaluation: conditionEvaluation,
 				ConditionResult:     conditionResult,
-				ConditionTool:       conditionTool,
-			})
+				ConditionTool:       conditionTool, ResolvedArgs: resolvedArgs})
 
 			// If step allows failure, continue execution
 			if step.AllowFailure {
@@ -468,6 +467,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 			ConditionEvaluation: conditionEvaluation,
 			ConditionResult:     conditionResult,
 			ConditionTool:       conditionTool,
+			ResolvedArgs:        resolvedArgs,
 		})
 
 		// Check if result indicates an error
@@ -596,7 +596,17 @@ func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results
 			step["allow_failure"] = stepMeta.AllowFailure
 		}
 
-		// Add result if available
+		// Add input (resolved arguments passed to the tool)
+		if stepMeta.ResolvedArgs != nil {
+			step["input"] = stepMeta.ResolvedArgs
+		}
+
+		// Add output (result from the tool execution)
+		if results[stepMeta.ID] != nil {
+			step["output"] = results[stepMeta.ID]
+		}
+
+		// Add result if available (kept for backward compatibility)
 		if stepMeta.Store && results[stepMeta.ID] != nil {
 			step["result"] = results[stepMeta.ID]
 		}
