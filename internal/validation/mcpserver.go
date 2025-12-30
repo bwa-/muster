@@ -126,15 +126,20 @@ func (v *MCPServerValidator) validateMetadata(result *ValidationResult, metadata
 
 func (v *MCPServerValidator) validateSpec(result *ValidationResult, spec map[string]interface{}) {
 	// Validate type (required)
+	var specType string
 	if err := validateRequired("spec.type", spec["type"]); err != nil {
 		result.Errors = append(result.Errors, *err)
+		return // Can't validate further without type
 	} else {
 		if err := validateType("spec.type", spec["type"], "string"); err != nil {
 			result.Errors = append(result.Errors, *err)
+			return
 		} else {
-			if err := validateEnum("spec.type", spec["type"], []string{"localCommand"}); err != nil {
+			if err := validateEnum("spec.type", spec["type"], []string{"stdio", "streamable-http", "sse"}); err != nil {
 				result.Errors = append(result.Errors, *err)
+				return
 			}
+			specType = spec["type"].(string)
 		}
 	}
 
@@ -146,7 +151,7 @@ func (v *MCPServerValidator) validateSpec(result *ValidationResult, spec map[str
 	}
 
 	// Validate toolPrefix (optional)
-	if toolPrefix, ok := spec["toolPrefix"]; ok && toolPrefix != nil {
+	if toolPrefix, ok := spec["toolPrefix"]; ok && toolPrefix != nil && toolPrefix != "" {
 		if err := validateType("spec.toolPrefix", toolPrefix, "string"); err != nil {
 			result.Errors = append(result.Errors, *err)
 		} else {
@@ -156,25 +161,49 @@ func (v *MCPServerValidator) validateSpec(result *ValidationResult, spec map[str
 		}
 	}
 
-	// Validate command (required for localCommand type, should be a string - the executable)
+	// Validate command (required for stdio type, should be a string - the executable)
 	if command, ok := spec["command"]; ok {
-		if err := validateType("spec.command", command, "string"); err != nil {
+		if specType != "stdio" {
+			result.Errors = append(result.Errors, ValidationError{
+				Field:      "spec.command",
+				Type:       ErrorTypeConstraintViolation,
+				Message:    "command is only allowed when type is \"stdio\"",
+				Suggestion: "remove command field or change type to \"stdio\"",
+			})
+		} else if err := validateType("spec.command", command, "string"); err != nil {
 			result.Errors = append(result.Errors, *err)
+		} else {
+			// Check that command is not empty
+			if cmdStr, ok := command.(string); ok && cmdStr == "" {
+				result.Errors = append(result.Errors, ValidationError{
+					Field:      "spec.command",
+					Type:       ErrorTypeConstraintViolation,
+					Message:    "command must not be empty when provided",
+					Suggestion: "provide a valid executable path or command",
+				})
+			}
 		}
 	} else {
-		// Command is required for localCommand type
-		if specType, ok := spec["type"].(string); ok && specType == "localCommand" {
+		// Command is required for stdio type
+		if specType == "stdio" {
 			result.Errors = append(result.Errors, ValidationError{
 				Field:   "spec.command",
 				Type:    ErrorTypeRequired,
-				Message: "command is required when type is \"localCommand\"",
+				Message: "command is required when type is \"stdio\"",
 			})
 		}
 	}
 
-	// Validate args (optional, array of strings - command arguments)
+	// Validate args (optional, array of strings - command arguments, only for stdio)
 	if args, ok := spec["args"]; ok && args != nil {
-		if err := validateType("spec.args", args, "array"); err != nil {
+		if specType != "stdio" {
+			result.Errors = append(result.Errors, ValidationError{
+				Field:      "spec.args",
+				Type:       ErrorTypeConstraintViolation,
+				Message:    "args is only allowed when type is \"stdio\"",
+				Suggestion: "remove args field or change type to \"stdio\"",
+			})
+		} else if err := validateType("spec.args", args, "array"); err != nil {
 			result.Errors = append(result.Errors, *err)
 		} else {
 			// Validate each arg element is a string
@@ -184,6 +213,88 @@ func (v *MCPServerValidator) validateSpec(result *ValidationResult, spec map[str
 						result.Errors = append(result.Errors, *err)
 					}
 				}
+			}
+		}
+	}
+
+	// Validate url (required for remote types: streamable-http, sse)
+	if url, ok := spec["url"]; ok {
+		if specType == "stdio" {
+			result.Errors = append(result.Errors, ValidationError{
+				Field:      "spec.url",
+				Type:       ErrorTypeConstraintViolation,
+				Message:    "url is only allowed when type is \"streamable-http\" or \"sse\"",
+				Suggestion: "remove url field or change type to \"streamable-http\" or \"sse\"",
+			})
+		} else if err := validateType("spec.url", url, "string"); err != nil {
+			result.Errors = append(result.Errors, *err)
+		} else {
+			// Validate URL pattern
+			if err := validatePattern("spec.url", url, `^https?://[^\s/$.?#].[^\s]*$`, "must be a valid HTTP(S) URL"); err != nil {
+				result.Errors = append(result.Errors, *err)
+			}
+		}
+	} else {
+		// URL is required for remote types
+		if specType == "streamable-http" || specType == "sse" {
+			result.Errors = append(result.Errors, ValidationError{
+				Field:   "spec.url",
+				Type:    ErrorTypeRequired,
+				Message: fmt.Sprintf("url is required when type is %q", specType),
+			})
+		}
+	}
+
+	// Validate headers (optional, only for remote types)
+	if headers, ok := spec["headers"]; ok && headers != nil {
+		if specType == "stdio" {
+			result.Errors = append(result.Errors, ValidationError{
+				Field:      "spec.headers",
+				Type:       ErrorTypeConstraintViolation,
+				Message:    "headers is only allowed when type is \"streamable-http\" or \"sse\"",
+				Suggestion: "remove headers field or change type to \"streamable-http\" or \"sse\"",
+			})
+		} else if err := validateType("spec.headers", headers, "object"); err != nil {
+			result.Errors = append(result.Errors, *err)
+		} else {
+			// Validate each header value is a string
+			if headersMap, ok := headers.(map[string]interface{}); ok {
+				for key, value := range headersMap {
+					if err := validateType(fmt.Sprintf("spec.headers.%s", key), value, "string"); err != nil {
+						result.Errors = append(result.Errors, *err)
+					}
+				}
+			}
+		}
+	}
+
+	// Validate timeout (optional, integer with min/max constraints)
+	if timeout, ok := spec["timeout"]; ok && timeout != nil {
+		if err := validateType("spec.timeout", timeout, "number"); err != nil {
+			result.Errors = append(result.Errors, *err)
+		} else {
+			// Convert to int for range validation
+			var timeoutInt int
+			switch v := timeout.(type) {
+			case int:
+				timeoutInt = v
+			case float64:
+				timeoutInt = int(v)
+			default:
+				result.Errors = append(result.Errors, ValidationError{
+					Field:   "spec.timeout",
+					Type:    ErrorTypeInvalidType,
+					Message: "timeout must be an integer",
+				})
+			}
+			if timeoutInt < 1 || timeoutInt > 300 {
+				result.Errors = append(result.Errors, ValidationError{
+					Field:      "spec.timeout",
+					Type:       ErrorTypeInvalidValue,
+					Message:    fmt.Sprintf("timeout must be between 1 and 300 seconds, got %d", timeoutInt),
+					Value:      timeoutInt,
+					Suggestion: "set timeout between 1 and 300",
+				})
 			}
 		}
 	}
@@ -217,7 +328,7 @@ func (v *MCPServerValidator) validateSpec(result *ValidationResult, spec map[str
 
 	// Check for unknown spec fields
 	v.checkUnknownFields(result, spec, []string{
-		"type", "autoStart", "toolPrefix", "command", "args", "env", "description",
+		"type", "autoStart", "toolPrefix", "command", "args", "url", "headers", "timeout", "env", "description",
 	})
 }
 

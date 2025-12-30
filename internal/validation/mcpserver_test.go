@@ -14,10 +14,11 @@ metadata:
   name: test-server
   namespace: default
 spec:
-  type: localCommand
+  type: stdio
   autoStart: true
   toolPrefix: test
-  command: ["npx", "@modelcontextprotocol/server-git"]
+  command: "npx"
+  args: ["@modelcontextprotocol/server-git"]
   env:
     LOG_LEVEL: "info"
   description: "Test MCP server"
@@ -46,8 +47,9 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "apiVersion",
 			expectedType:  ErrorTypeRequired,
@@ -59,8 +61,9 @@ apiVersion: muster.giantswarm.io/v1alpha1
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "kind",
 			expectedType:  ErrorTypeRequired,
@@ -71,8 +74,9 @@ spec:
 apiVersion: muster.giantswarm.io/v1alpha1
 kind: MCPServer
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "metadata",
 			expectedType:  ErrorTypeRequired,
@@ -85,8 +89,9 @@ kind: MCPServer
 metadata:
   namespace: default
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "metadata.name",
 			expectedType:  ErrorTypeRequired,
@@ -110,20 +115,21 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  command: ["test"]
+  command: "test"
+  args: []
 `,
 			expectedField: "spec.type",
 			expectedType:  ErrorTypeRequired,
 		},
 		{
-			name: "missing spec.command for localCommand",
+			name: "missing spec.command for stdio",
 			yaml: `
 apiVersion: muster.giantswarm.io/v1alpha1
 kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
+  type: stdio
 `,
 			expectedField: "spec.command",
 			expectedType:  ErrorTypeRequired,
@@ -171,8 +177,9 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "apiVersion",
 		},
@@ -184,8 +191,9 @@ kind: 123
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "kind",
 		},
@@ -197,8 +205,9 @@ kind: MCPServer
 metadata:
   name: 123
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "metadata.name",
 		},
@@ -210,9 +219,10 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
+  type: stdio
   autoStart: "yes"
-  command: ["test"]
+  command: "test"
+  args: []
 `,
 			expectedField: "spec.autoStart",
 		},
@@ -224,8 +234,8 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: "should be array"
+  type: stdio
+  command: 123
 `,
 			expectedField: "spec.command",
 		},
@@ -237,8 +247,9 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
   env: ["not", "a", "map"]
 `,
 			expectedField: "spec.env",
@@ -287,8 +298,9 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "apiVersion",
 			expectedType:  ErrorTypeInvalidValue,
@@ -301,8 +313,9 @@ kind: Server
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `,
 			expectedField: "kind",
 			expectedType:  ErrorTypeInvalidValue,
@@ -316,7 +329,8 @@ metadata:
   name: test
 spec:
   type: remote
-  command: ["test"]
+  command: "test"
+  args: []
 `,
 			expectedField: "spec.type",
 			expectedType:  ErrorTypeInvalidValue,
@@ -330,7 +344,8 @@ metadata:
   name: test
 spec:
   type: localcommand
-  command: ["test"]
+  command: "test"
+  args: []
 `,
 			expectedField: "spec.type",
 			expectedType:  ErrorTypeInvalidValue,
@@ -378,9 +393,10 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
+  type: stdio
   toolPrefix: "123test"
-  command: ["test"]
+  command: "test"
+  args: []
 `,
 			expectedField: "spec.toolPrefix",
 		},
@@ -392,9 +408,10 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
+  type: stdio
   toolPrefix: "test@prefix"
-  command: ["test"]
+  command: "test"
+  args: []
 `,
 			expectedField: "spec.toolPrefix",
 		},
@@ -441,8 +458,9 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
   description: "This is a very long description that exceeds the maximum allowed length of 500 characters. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum plus extra text"
 `,
 			expectedField: "spec.description",
@@ -455,8 +473,8 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: []
+  type: stdio
+  command: ""
 `,
 			expectedField: "spec.command",
 		},
@@ -502,10 +520,11 @@ metadata:
   annotations:
     description: "test annotation"
 spec:
-  type: localCommand
+  type: stdio
   autoStart: true
   toolPrefix: myprefix
-  command: ["npx", "@modelcontextprotocol/server-git"]
+  command: "npx"
+  args: []
   env:
     LOG_LEVEL: "debug"
     DEBUG: "true"
@@ -529,8 +548,9 @@ kind: MCPServer
 metadata:
   name: test
 spec:
-  type: localCommand
-  command: ["test"]
+  type: stdio
+  command: "test"
+  args: []
 `
 
 	result := validator.Validate([]byte(yaml), "test.yaml")
