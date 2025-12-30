@@ -47,6 +47,10 @@ type Config struct {
 	// OAuth Server settings (ADR 005 - for protecting the Muster Server)
 	OAuthServerEnabled bool   // Enable OAuth 2.1 protection for Muster Server
 	OAuthServerBaseURL string // Base URL of the Muster Server for OAuth issuer
+
+	// Version is the application version string (e.g., "0.0.68").
+	// Typically injected at build time via -ldflags.
+	Version string
 }
 
 // NewConfig creates a new application configuration with the specified settings.
@@ -58,22 +62,24 @@ type Config struct {
 //   - silent: disables all output to the console
 //   - yolo: enables relaxed safety checks and reduced confirmations
 //   - configPath: custom config directory (empty string for default layered loading)
+//   - version: application version string (e.g., "0.0.68")
 //
 // Returns a fully initialized Config struct ready for use with NewApplication.
 //
 // Example:
 //
 //	// Standard mode with debug enabled
-//	cfg := app.NewConfig(true, false, false, "")
+//	cfg := app.NewConfig(true, false, false, "", "0.0.68")
 //
 //	// Custom configuration path
-//	cfg := app.NewConfig(false, false, false, "/opt/muster/config")
-func NewConfig(debug, silent, yolo bool, configPath string) *Config {
+//	cfg := app.NewConfig(false, false, false, "/opt/muster/config", "0.0.68")
+func NewConfig(debug, silent, yolo bool, configPath string, version string) *Config {
 	return &Config{
 		Debug:      debug,
 		Silent:     silent,
 		Yolo:       yolo,
 		ConfigPath: configPath,
+		Version:    version,
 	}
 }
 

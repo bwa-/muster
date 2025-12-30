@@ -82,7 +82,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create application configuration without cluster arguments
-	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath).
+	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath, cmd.Root().Version).
 		WithOAuth(serveOAuthEnabled, serveOAuthPublicURL, serveOAuthClientID).
 		WithOAuthServer(serveOAuthServerEnabled, serveOAuthServerBaseURL)
 

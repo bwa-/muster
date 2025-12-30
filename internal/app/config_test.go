@@ -11,6 +11,7 @@ func TestNewConfig(t *testing.T) {
 		debug      bool
 		yolo       bool
 		configPath string
+		version    string
 	}{
 		{
 			name:       "full configuration",
@@ -18,6 +19,7 @@ func TestNewConfig(t *testing.T) {
 			debug:      true,
 			yolo:       true,
 			configPath: "/custom/config/path",
+			version:    "0.0.68",
 		},
 		{
 			name:       "minimal configuration",
@@ -25,6 +27,7 @@ func TestNewConfig(t *testing.T) {
 			silent:     false,
 			yolo:       false,
 			configPath: "",
+			version:    "0.0.1",
 		},
 		{
 			name:       "debug only",
@@ -32,6 +35,7 @@ func TestNewConfig(t *testing.T) {
 			debug:      true,
 			yolo:       false,
 			configPath: "",
+			version:    "test",
 		},
 		{
 			name:       "with custom config path",
@@ -39,12 +43,13 @@ func TestNewConfig(t *testing.T) {
 			debug:      false,
 			yolo:       false,
 			configPath: "/test/config",
+			version:    "1.2.3",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := NewConfig(tt.debug, tt.silent, tt.yolo, tt.configPath)
+			cfg := NewConfig(tt.debug, tt.silent, tt.yolo, tt.configPath, tt.version)
 
 			if cfg.Debug != tt.debug {
 				t.Errorf("Debug = %v, want %v", cfg.Debug, tt.debug)
@@ -57,6 +62,9 @@ func TestNewConfig(t *testing.T) {
 			}
 			if cfg.ConfigPath != tt.configPath {
 				t.Errorf("ConfigPath = %v, want %v", cfg.ConfigPath, tt.configPath)
+			}
+			if cfg.Version != tt.version {
+				t.Errorf("Version = %v, want %v", cfg.Version, tt.version)
 			}
 			if cfg.MusterConfig != nil {
 				t.Error("MusterConfig should be nil before loading")

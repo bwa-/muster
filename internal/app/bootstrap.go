@@ -68,6 +68,9 @@ func NewApplication(cfg *Config) (*Application, error) {
 	}
 	logging.InitForCLI(appLogLevel, logOutput)
 
+	// Log application version
+	logging.Info("Bootstrap", "Starting muster version %s", cfg.Version)
+
 	// Load environment configuration
 	var musterCfg config.MusterConfig
 	var err error
