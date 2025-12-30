@@ -6,5 +6,6 @@ import "muster/cmd"
 var version = "dev"
 
 func main() {
-cmd.Execute(version)
+	cmd.SetVersion(version)
+	cmd.Execute()
 }
