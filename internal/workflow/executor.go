@@ -941,6 +941,7 @@ func (we *WorkflowExecutor) expandForEachStep(step api.WorkflowStep, execCtx *ex
 
 	return expandedSteps, nil
 }
+
 // resolveValue recursively resolves template variables in a value
 func (we *WorkflowExecutor) resolveValue(value interface{}, ctx *executionContext) (interface{}, error) {
 	switch v := value.(type) {

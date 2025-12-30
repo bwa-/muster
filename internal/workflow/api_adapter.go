@@ -23,11 +23,12 @@ import (
 
 // Adapter provides the API adapter for workflow management
 type Adapter struct {
-	client           client.MusterClient
-	namespace        string
-	executor         *WorkflowExecutor
-	executionTracker *ExecutionTracker
-	toolChecker      ToolAvailabilityChecker
+	client             client.MusterClient
+	namespace          string
+	executor           *WorkflowExecutor
+	executionTracker   *ExecutionTracker
+	toolChecker        ToolAvailabilityChecker
+	externalToolCaller ToolCaller
 
 	// Prevent circular dependency during tool generation
 	generatingTools bool
@@ -37,6 +38,21 @@ type Adapter struct {
 // ToolAvailabilityChecker interface for checking tool availability
 type ToolAvailabilityChecker interface {
 	IsToolAvailable(toolName string) bool
+}
+
+// IsToolAvailable checks if a tool is available, considering both directly handled tools and aggregator tools
+func (a *Adapter) IsToolAvailable(toolName string) bool {
+	// First check if we can handle it directly
+	if a.canHandleDirectly(toolName) {
+		return true
+	}
+	
+	// Otherwise delegate to the external tool checker (aggregator)
+	if a.toolChecker != nil {
+		return a.toolChecker.IsToolAvailable(toolName)
+	}
+	
+	return false
 }
 
 // NewAdapterWithClient creates a new workflow adapter with a pre-configured client
@@ -51,9 +67,10 @@ func NewAdapterWithClient(musterClient client.MusterClient, namespace string, to
 		namespace:        namespace,
 		executionTracker: NewExecutionTracker(NewExecutionStorage(configPath)),
 		toolChecker:      toolChecker,
+		externalToolCaller: toolCaller,
 	}
 
-	adapter.executor = NewWorkflowExecutor(toolCaller, adapter)
+	adapter.executor = NewWorkflowExecutor(adapter, adapter)
 
 	return adapter
 }
@@ -457,12 +474,70 @@ func (a *Adapter) GetWorkflowExecution(ctx context.Context, req *api.GetWorkflow
 
 // CallToolInternal calls a tool internally - required by ToolCaller interface
 func (a *Adapter) CallToolInternal(ctx context.Context, toolName string, args map[string]interface{}) (*mcp.CallToolResult, error) {
-	if a.executor == nil {
-		return nil, fmt.Errorf("workflow executor not available")
+	// First, check if this is one of our own tools and handle it directly
+	// This prevents circular calls when workflows call workflow management tools
+	if a.canHandleDirectly(toolName) {
+		logging.Debug("WorkflowAdapter", "Handling tool directly: %s", toolName)
+		result, err := a.ExecuteTool(ctx, toolName, args)
+		if err != nil {
+			return nil, err
+		}
+		// Convert API result to MCP result
+		return convertAPIResultToMCP(result), nil
 	}
 
-	// Delegate to the executor's tool caller
-	return a.executor.toolCaller.CallToolInternal(ctx, toolName, args)
+	// Not our tool, delegate to the aggregator through the external tool caller
+	if a.externalToolCaller == nil {
+		return nil, fmt.Errorf("external tool caller not available")
+	}
+
+	return a.externalToolCaller.CallToolInternal(ctx, toolName, args)
+}
+
+// canHandleDirectly checks if this adapter can handle the tool directly
+func (a *Adapter) canHandleDirectly(toolName string) bool {
+	// List of tools this adapter handles directly
+	directTools := []string{
+		"workflow_list",
+		"workflow_get",
+		"workflow_create",
+		"workflow_update",
+		"workflow_delete",
+		"workflow_validate",
+		"workflow_available",
+		"workflow_execution_list",
+		"workflow_execution_get",
+		"util_transform_text",
+	}
+	
+	for _, tool := range directTools {
+		if toolName == tool {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// convertAPIResultToMCP converts an API CallToolResult to MCP format
+func convertAPIResultToMCP(result *api.CallToolResult) *mcp.CallToolResult {
+	mcpContent := make([]mcp.Content, len(result.Content))
+	for i, content := range result.Content {
+		// Handle different content types
+		switch v := content.(type) {
+		case string:
+			mcpContent[i] = mcp.NewTextContent(v)
+		default:
+			// For other types (including arrays), marshal to JSON
+			jsonBytes, _ := json.Marshal(v)
+			mcpContent[i] = mcp.NewTextContent(string(jsonBytes))
+		}
+	}
+	
+	return &mcp.CallToolResult{
+		Content: mcpContent,
+		IsError: result.IsError,
+	}
 }
 
 // Stop stops the workflow adapter
@@ -764,14 +839,14 @@ func (a *Adapter) isWorkflowAvailable(workflow *api.Workflow) bool {
 	// Check each step's tool availability
 	for _, step := range workflow.Steps {
 		// Check regular step tool
-		if step.Tool != "" && !a.toolChecker.IsToolAvailable(step.Tool) {
+		if step.Tool != "" && !a.IsToolAvailable(step.Tool) {
 			logging.Debug("WorkflowAdapter", "Workflow %s unavailable: missing tool %s", workflow.Name, step.Tool)
 			return false
 		}
 
 		// Check forEach step tool
 		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
-			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
+			if !a.IsToolAvailable(step.ForEach.Step.Tool) {
 				logging.Debug("WorkflowAdapter", "Workflow %s unavailable: missing forEach tool %s", workflow.Name, step.ForEach.Step.Tool)
 				return false
 			}
@@ -799,7 +874,7 @@ func (a *Adapter) findMissingTools(workflow *api.Workflow) []string {
 
 	for _, step := range workflow.Steps {
 		// Check regular step tool
-		if step.Tool != "" && !a.toolChecker.IsToolAvailable(step.Tool) {
+		if step.Tool != "" && !a.IsToolAvailable(step.Tool) {
 			if !seenTools[step.Tool] {
 				missingTools = append(missingTools, step.Tool)
 				seenTools[step.Tool] = true
@@ -808,7 +883,7 @@ func (a *Adapter) findMissingTools(workflow *api.Workflow) []string {
 
 		// Check forEach step tool
 		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
-			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
+			if !a.IsToolAvailable(step.ForEach.Step.Tool) {
 				if !seenTools[step.ForEach.Step.Tool] {
 					missingTools = append(missingTools, step.ForEach.Step.Tool)
 					seenTools[step.ForEach.Step.Tool] = true
@@ -1071,7 +1146,7 @@ func (a *Adapter) GetTools() []api.ToolMetadata {
 		},
 		// Text transformation utility tool
 		{
-			Name:        "workflow_transform_text",
+			Name:        "util_transform_text",
 			Description: "Apply a series of text transformations to convert unstructured text into structured data. Useful for parsing tool outputs into arrays or modifying text step-by-step.",
 			Args: []api.ArgMetadata{
 				{
@@ -1106,6 +1181,8 @@ func (a *Adapter) GetTools() []api.ToolMetadata {
 
 // ExecuteTool executes a tool by name
 func (a *Adapter) ExecuteTool(ctx context.Context, toolName string, args map[string]interface{}) (*api.CallToolResult, error) {
+	logging.Info("WorkflowAdapter", "ExecuteTool called with toolName=%s, args=%+v", toolName, args)
+	
 	switch {
 	case toolName == "workflow_list":
 		return a.handleList(args)
@@ -1125,14 +1202,17 @@ func (a *Adapter) ExecuteTool(ctx context.Context, toolName string, args map[str
 		return a.handleExecutionList(ctx, args)
 	case toolName == "workflow_execution_get":
 		return a.handleExecutionGet(ctx, args)
-	case toolName == "workflow_transform_text":
+	case toolName == "util_transform_text":
+		logging.Info("WorkflowAdapter", "Routing to handleTransformText")
 		return a.handleTransformText(args)
 
 	case strings.HasPrefix(toolName, "action_"):
 		// Execute workflow
 		workflowName := strings.TrimPrefix(toolName, "action_")
+		logging.Info("WorkflowAdapter", "Routing to ExecuteWorkflow with workflowName=%s", workflowName)
 		return a.ExecuteWorkflow(ctx, workflowName, args)
 	default:
+		logging.Error("WorkflowAdapter", fmt.Errorf("unknown tool"), "Unknown tool: %s", toolName)
 		return nil, fmt.Errorf("unknown tool: %s", toolName)
 	}
 }

@@ -196,6 +196,7 @@ func (a *AggregatorServer) prefixToolName(toolName string) string {
 		"serviceclass_", // ServiceClass management operations
 		"mcpserver_",    // MCP server management operations
 		"workflow_",     // workflow management (not execution) operations
+		"util_",         // utility tools (transform_text, etc.)
 		"config_",       // configuration management operations
 		"events",        // Event management operations
 	}
