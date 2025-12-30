@@ -94,41 +94,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 	expandedSteps, err := we.expandForEachSteps(workflow.Steps, execCtx)
 	if err != nil {
 		logging.Error("WorkflowExecutor", err, "Failed to expand forEach steps")
-
-		// Build partial result showing which forEach step failed
-		steps := []map[string]interface{}{}
-		for _, step := range workflow.Steps {
-			if step.ForEach != nil {
-				// This forEach step likely failed expansion
-				steps = append(steps, map[string]interface{}{
-					"id":     step.ID,
-					"tool":   step.ForEach.Step.Tool, // Show the actual tool from forEach template
-					"status": "failed",
-					"error":  fmt.Sprintf("forEach expansion failed: %v", err),
-				})
-			} else {
-				steps = append(steps, map[string]interface{}{
-					"id":     step.ID,
-					"tool":   step.Tool,
-					"status": "not_executed",
-				})
-			}
-		}
-
-		partialResult := map[string]interface{}{
-			"execution_id":  "",
-			"workflow":      workflow.Name,
-			"status":        "failed",
-			"input":         execCtx.input,
-			"steps":         steps,
-			"template_vars": execCtx.templateVars,
-		}
-
-		partialJSON, _ := json.Marshal(partialResult)
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{mcp.NewTextContent(string(partialJSON))},
-			IsError: true,
-		}, fmt.Errorf("failed to expand forEach steps: %w", err)
+		return nil, fmt.Errorf("failed to expand forEach steps: %w", err)
 	}
 	logging.Debug("WorkflowExecutor", "Expanded %d steps to %d steps", len(workflow.Steps), len(expandedSteps))
 
@@ -398,7 +364,8 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				"allow_failure": step.AllowFailure,
 			})
 
-			failedMeta := stepMetadata{
+			// Record the failed step metadata
+			execCtx.stepMetadata = append(execCtx.stepMetadata, stepMetadata{
 				ID:                  step.ID,
 				Tool:                step.Tool,
 				Store:               step.Store,
@@ -407,8 +374,7 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				ConditionEvaluation: conditionEvaluation,
 				ConditionResult:     conditionResult,
 				ConditionTool:       conditionTool,
-			}
-			execCtx.stepMetadata = append(execCtx.stepMetadata, failedMeta)
+			})
 
 			// If step allows failure, continue execution
 			if step.AllowFailure {
@@ -429,8 +395,8 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 				continue
 			}
 
-			// Build clean partial result for failed workflows with available tools
-			steps := we.buildStepsArrayWithAvailableTools(execCtx.stepMetadata, execCtx.results, step.ID, step.Tool, err.Error())
+			// Build clean partial result for failed workflows
+			steps := we.buildStepsArray(execCtx.stepMetadata, execCtx.results, step.ID, err.Error())
 
 			partialResult := map[string]interface{}{
 				"execution_id":  "", // Will be filled by manager
@@ -638,80 +604,6 @@ func (we *WorkflowExecutor) buildStepsArray(stepMetadata []stepMetadata, results
 		// Add error if this is the failed step
 		if failedStepID != "" && stepMeta.ID == failedStepID {
 			step["error"] = errorMessage
-		}
-
-		steps = append(steps, step)
-	}
-
-	return steps
-}
-
-// buildStepsArrayWithAvailableTools builds the steps array and includes available tools for failed tool calls
-func (we *WorkflowExecutor) buildStepsArrayWithAvailableTools(stepMetadata []stepMetadata, results map[string]interface{}, failedStepID string, failedTool string, errorMessage string) []map[string]interface{} {
-	var steps []map[string]interface{}
-
-	// Get all available tools from aggregator
-	var availableTools []string
-	if aggregator := api.GetAggregator(); aggregator != nil {
-		availableTools = aggregator.GetAvailableTools()
-	}
-
-	// Group tools by category (core_, x_, workflow_)
-	toolsByCategory := map[string][]string{
-		"core":     []string{},
-		"external": []string{},
-		"workflow": []string{},
-	}
-
-	for _, tool := range availableTools {
-		if strings.HasPrefix(tool, "core_") {
-			toolsByCategory["core"] = append(toolsByCategory["core"], tool)
-		} else if strings.HasPrefix(tool, "x_") {
-			toolsByCategory["external"] = append(toolsByCategory["external"], tool)
-		} else if strings.HasPrefix(tool, "workflow_") {
-			toolsByCategory["workflow"] = append(toolsByCategory["workflow"], tool)
-		}
-	}
-
-	for _, stepMeta := range stepMetadata {
-		step := map[string]interface{}{
-			"id":     stepMeta.ID,
-			"tool":   stepMeta.Tool,
-			"status": stepMeta.Status,
-		}
-
-		// Add condition information if present
-		if stepMeta.ConditionEvaluation != nil {
-			step["condition_evaluation"] = *stepMeta.ConditionEvaluation
-		}
-		if stepMeta.ConditionResult != nil {
-			step["condition_result"] = stepMeta.ConditionResult
-		}
-		if stepMeta.ConditionTool != "" {
-			step["condition_tool"] = stepMeta.ConditionTool
-		}
-
-		// Add allow_failure flag if true
-		if stepMeta.AllowFailure {
-			step["allow_failure"] = stepMeta.AllowFailure
-		}
-
-		// Add result if available
-		if stepMeta.Store && results[stepMeta.ID] != nil {
-			step["result"] = results[stepMeta.ID]
-		}
-
-		// Add error if this is the failed step
-		if failedStepID != "" && stepMeta.ID == failedStepID {
-			step["error"] = fmt.Sprintf("tool '%s' is not available: %s", failedTool, errorMessage)
-			
-			// Add available tools to help user find correct name
-			step["available_tools"] = map[string]interface{}{
-				"core":     toolsByCategory["core"],
-				"external": toolsByCategory["external"],
-				"workflow": toolsByCategory["workflow"],
-				"total":    len(availableTools),
-			}
 		}
 
 		steps = append(steps, step)
@@ -1100,7 +992,7 @@ func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx
 				return nil, fmt.Errorf("failed to resolve forEach step args for %s[%d]: %w", step.ID, idx, err)
 			}
 
-			// Create expanded step with metadata for error reporting
+			// Create expanded step
 			expandedStep := api.WorkflowStep{
 				ID:           fmt.Sprintf("%s_%d", step.ForEach.Step.ID, idx),
 				Tool:         step.ForEach.Step.Tool,
@@ -1108,11 +1000,6 @@ func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx
 				Store:        step.ForEach.Step.Store,
 				AllowFailure: step.ForEach.Step.AllowFailure,
 				Description:  fmt.Sprintf("%s (item %d/%d)", step.ForEach.Step.Description, idx+1, len(itemsArray)),
-				Metadata: map[string]interface{}{
-					"forEach_template": step.ForEach.Step.Tool,
-					"forEach_item":     item,
-					"forEach_index":    idx,
-				},
 			}
 
 			expandedSteps = append(expandedSteps, expandedStep)

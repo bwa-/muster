@@ -54,69 +54,56 @@ You are an expert AI developer working on `muster`, a Universal Control Plane fo
 - **Direct Coupling**: Importing sibling packages instead of using `internal/api`.
 - **Flaky Tests**: Using `time.Sleep` to fix race conditions.
 - **Manual Schema Edits**: Editing `schema.json` by hand.
+- **Root-Level Documentation**: Do NOT create implementation summary, completion, or feature documentation markdown files at repository root. Documentation belongs in `docs/` subdirectories.
 
 ## 🌿 Branch Strategy & Feature Development
 
-This fork uses a consolidated development workflow with the ability to extract features for upstream PRs:
+This fork follows a strict branch workflow to maintain clean history and enable selective PRs to upstream:
 
 ### Branch Structure
-- **`main`**: Clean mirror of upstream. NEVER commit features directly here. Keep synced with `git pull upstream main`.
-- **`dev`**: Primary development branch where all features are developed and merged together. This is the daily working branch.
+- **`main`**: Clean mirror of upstream. NEVER commit features directly here.
+- **`dev`**: **DEFAULT working branch** with all features merged. Used for local development. Always return to `dev` after completing work.
+- **`feature/*`**: Individual feature branches for PRs. Each contains ONE logical feature.
 
-### Development Workflow
+### Feature Development Workflow
 
-**Daily Development (in dev branch):**
-1. Work directly in `dev` branch for all feature development
-2. Commit frequently with descriptive, tagged messages using format: `[feature-name]: description`
-   - Example: `[env-vars]: Add environment variable substitution to workflow executor`
-   - Example: `[foreach]: Implement forEach loop support in workflow CRD`
-3. Test after each significant change: `make build && make test`
-4. Push to origin regularly: `git push origin dev`
+**Creating a new feature:**
+1. Start from clean `main`: `git checkout main && git pull upstream main`
+2. Create feature branch: `git checkout -b feature/descriptive-name`
+3. Implement feature with commits (NO version bumps in feature branch)
+4. Push feature branch: `git push origin feature/descriptive-name`
 
-**Commit Tagging Convention:**
-- Use square brackets with feature name at start of commit message
-- Common tags: `[env-vars]`, `[foreach]`, `[validation]`, `[yaml]`, `[text-transform]`, etc.
-- Keep tags consistent for related commits to enable easy filtering later
-- Multi-feature changes: `[env-vars][foreach]: Combined fix for...`
+**Merging to dev branch:**
+1. Switch to dev: `git checkout dev`
+2. Merge with no-commit: `git merge feature/descriptive-name --no-commit --no-ff`
+3. Update version in `main.go` (increment minor version)
+4. Commit merge: `git commit -m "Merge feature/descriptive-name (vX.X.X)"`
+5. Push dev: `git push origin dev`
 
-**Syncing with Upstream:**
+**Syncing with upstream:**
 1. Update main: `git checkout main && git pull upstream main && git push origin main`
-2. Merge upstream into dev: `git checkout dev && git merge main`
-3. Resolve any conflicts, test, and push: `git push origin dev`
+2. Rebase each feature: `git checkout feature/X && git rebase main && git push origin feature/X --force`
+3. Rebuild dev: `git checkout dev && git reset --hard main`
+4. Re-merge all features in order (oldest to newest)
+5. Push dev: `git push origin dev --force`
 
-### Extracting Features for Upstream PRs
+### Version Management
+- **Feature branches**: NO version changes (keeps them reusable)
+- **Dev branch**: Version bumped during merge commits
+- **Version scheme**: Semantic versioning (MAJOR.MINOR.PATCH)
+- **Increment**: Minor version per feature, patch for fixes
 
-When a feature in `dev` is ready for an upstream PR:
-
-1. **Create extraction branch** from clean upstream main:
-   ```bash
-   git checkout main
-   git pull upstream main
-   git checkout -b feature/descriptive-name
-   ```
-
-2. **Cherry-pick relevant commits** using git log filtering:
-   ```bash
-   git log dev --grep="\[feature-name\]" --oneline  # Find commits
-   git cherry-pick <commit-hash>  # Pick each relevant commit
-   ```
-
-3. **Test extracted feature in isolation:**
-   ```bash
-   make build && make test
-   muster test --scenario <relevant-scenario> --verbose
-   ```
-
-4. **Adjust if needed** - Feature may need small adjustments to work standalone
-5. **Submit PR** to upstream from the extraction branch
-6. **Keep dev unchanged** - No rebasing or modification of dev branch
+### PR Creation
+- Create PRs from `feature/*` branches to upstream `main`
+- Each PR is independent and can be accepted/rejected separately
+- Feature branch stays at upstream's current version (no conflicts)
+- If PR rejected, simply don't merge that feature into next dev rebuild
 
 ### Key Principles
-- **Develop in dev**: All features built together in dev branch, dependencies are natural
-- **Tag commits**: Use `[feature-name]` prefixes for easy filtering
-- **Extract when ready**: Only create feature branches when preparing upstream PR
-- **Test extractions**: Extracted features must work standalone
-- **Sync regularly**: Pull upstream changes into main, merge main into dev
-- **Complete features only**: Only commit complete, tested features to dev
+- Keep `main` synced with upstream (enables clean rebases)
+- Keep feature branches small and focused (one logical change)
+- Keep dev as throw-away branch (rebuilt when needed)
+- Never version bump in feature branches (done during merge to dev)
+- **Always work on `dev` branch by default** - do NOT switch to `main` after completing tasks
 
-**IMPORTANT:** Features in `dev` can depend on each other freely. Only when extracting for upstream PR do we need to ensure the feature works independently.
+**IMPORTANT:** Only merge *complete* features into the `dev` branch. Do not merge incomplete or partially implemented features. Every feature branch must be fully implemented, tested, and documented before merging to `dev`.

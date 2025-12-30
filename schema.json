@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Generated schema for muster core API tools for test scenario validation",
-  "generated_at": "2025-12-13T23:47:13+01:00",
+  "generated_at": "2025-12-21T11:07:04+01:00",
   "properties": {
     "tools": {
       "description": "Core API tools available in muster serve",
@@ -1602,42 +1602,433 @@
             "steps": {
               "description": "Array of transformation steps to apply sequentially",
               "items": {
-                "additionalProperties": false,
                 "description": "Individual transformation step configuration",
-                "properties": {
-                  "args": {
-                    "additionalProperties": {
-                      "description": "Transformation-specific argument value"
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "description": "Extract lines that start with a specific prefix. Input: string → Output: array. Example: Extract markdown bullet points starting with '- '.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "prefix": {
+                            "description": "The prefix to match at the start of lines (e.g., '- ' for markdown lists, 'ERROR:' for error lines)",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "prefix"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "extract_lines_starting_with",
+                        "description": "Extracts lines that start with a specific prefix",
+                        "type": "string"
+                      }
                     },
-                    "description": "Arguments for the transformation step (depends on type)",
-                    "type": "object"
+                    "required": [
+                      "type",
+                      "args"
+                    ]
                   },
-                  "type": {
-                    "description": "Type of transformation to apply",
-                    "enum": [
-                      "extract_lines_starting_with",
-                      "extract_lines_matching",
-                      "extract_between",
-                      "extract_after",
-                      "extract_before",
-                      "replace",
-                      "replace_regex",
-                      "trim",
-                      "trim_prefix",
-                      "trim_suffix",
-                      "trim_each",
-                      "to_lower",
-                      "to_upper",
-                      "split",
-                      "split_lines",
-                      "remove_empty",
-                      "remove_duplicates"
-                    ],
-                    "type": "string"
+                  {
+                    "additionalProperties": false,
+                    "description": "Extract lines matching a regular expression pattern. Input: string → Output: array. Example: Extract lines matching '^[0-9]+\\.' for numbered lists.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "pattern": {
+                            "description": "Regular expression pattern to match lines (e.g., '^ERROR:', '^[a-zA-Z0-9_-]+:')",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "pattern"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "extract_lines_matching",
+                        "description": "Extracts lines matching a regex pattern",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "args"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Extract text between two marker strings. Input: string → Output: string. Example: Extract content between '[START]' and '[END]' markers.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "end": {
+                            "description": "End marker string (content before this marker will be included)",
+                            "type": "string"
+                          },
+                          "start": {
+                            "description": "Start marker string (content after this marker will be included)",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "start",
+                          "end"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "extract_between",
+                        "description": "Extracts text between two markers",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "args"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Extract all text after a marker string. Input: string → Output: string. Example: Extract content after 'Results:' header.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "marker": {
+                            "description": "Marker string to search for (returns all text after this marker)",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "marker"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "extract_after",
+                        "description": "Extracts all text after a marker",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "args"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Extract all text before a marker string. Input: string → Output: string. Example: Extract content before '---' separator.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "marker": {
+                            "description": "Marker string to search for (returns all text before this marker)",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "marker"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "extract_before",
+                        "description": "Extracts all text before a marker",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "args"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Simple string replacement (replaces all occurrences). Input: string or array → Output: same type. Example: Replace ' and ' with ', ' to change separators.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "new": {
+                            "default": "",
+                            "description": "String to replace with (optional, defaults to empty string for removal)",
+                            "type": "string"
+                          },
+                          "old": {
+                            "description": "String to find and replace",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "old"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "replace",
+                        "description": "Performs simple string replacement",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "args"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Regex-based replacement (supports capture groups). Input: string or array → Output: same type. Example: Replace '\\s+' with ' ' to normalize whitespace.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "pattern": {
+                            "description": "Regular expression pattern to match (e.g., '\\s+', ':.*$', '^[0-9]+\\.')",
+                            "type": "string"
+                          },
+                          "replacement": {
+                            "default": "",
+                            "description": "Replacement string (optional, defaults to empty string for removal)",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "pattern"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "replace_regex",
+                        "description": "Performs regex-based replacement",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "args"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Remove leading and trailing whitespace. Input: string or array → Output: same type. Works on each element if input is array.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "trim",
+                        "description": "Removes leading and trailing whitespace",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Remove specific prefix from text. Input: string or array → Output: same type. Example: Remove '- ' from markdown list items.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "prefix": {
+                            "description": "Prefix to remove from the beginning of strings (e.g., '- ', '• ', 'Item: ')",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "prefix"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "trim_prefix",
+                        "description": "Removes a specific prefix from text",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "args"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Remove specific suffix from text. Input: string or array → Output: same type. Example: Remove '.txt' from filenames.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "suffix": {
+                            "description": "Suffix to remove from the end of strings (e.g., '.txt', '.log', ':')",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "suffix"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "trim_suffix",
+                        "description": "Removes a specific suffix from text",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "args"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Trim whitespace from each array element. Input: array → Output: array. Use this after split operations to clean up items.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "trim_each",
+                        "description": "Trims whitespace from each array element",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Convert text to lowercase. Input: string or array → Output: same type. Useful for case-insensitive comparisons.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "to_lower",
+                        "description": "Converts text to lowercase",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Convert text to uppercase. Input: string or array → Output: same type. Useful for normalization.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "to_upper",
+                        "description": "Converts text to uppercase",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Split string by delimiter. Input: string → Output: array. Example: Split 'a,b,c' by ',' into ['a','b','c'].",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "delimiter": {
+                            "default": ",",
+                            "description": "Delimiter to split on (default: ',')",
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "split",
+                        "description": "Splits a string by delimiter",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Split string by newlines. Input: string → Output: array. Commonly used as first step to process multi-line output.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "split_lines",
+                        "description": "Splits text by newlines",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Remove empty strings from array. Input: array → Output: array. Use after split operations to clean up empty elements.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "remove_empty",
+                        "description": "Removes empty strings from array",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Remove duplicate strings from array. Input: array → Output: array. Preserves first occurrence order.",
+                    "properties": {
+                      "args": {
+                        "additionalProperties": false,
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "remove_duplicates",
+                        "description": "Removes duplicate strings from array",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
                   }
-                },
-                "required": [
-                  "type"
                 ],
                 "type": "object"
               },

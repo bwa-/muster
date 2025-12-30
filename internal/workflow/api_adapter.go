@@ -29,10 +29,6 @@ type Adapter struct {
 	executionTracker *ExecutionTracker
 	toolChecker      ToolAvailabilityChecker
 
-	// Tool discovery state tracking
-	toolsDiscovered bool         // true after first tool update event
-	discoveryMutex  sync.RWMutex // protects toolsDiscovered flag
-
 	// Prevent circular dependency during tool generation
 	generatingTools bool
 	mu              sync.RWMutex
@@ -62,26 +58,10 @@ func NewAdapterWithClient(musterClient client.MusterClient, namespace string, to
 	return adapter
 }
 
-// Register registers this adapter with the API layer and subscribes to tool updates
+// Register registers this adapter with the API layer
 func (a *Adapter) Register() {
 	api.RegisterWorkflow(a)
-	api.SubscribeToToolUpdates(a)
-	logging.Debug("WorkflowAdapter", "Registered workflow adapter with API layer and subscribed to tool updates")
-}
-
-// OnToolsUpdated implements the ToolUpdateSubscriber interface
-// This method is called when tools become available or change
-func (a *Adapter) OnToolsUpdated(event api.ToolUpdateEvent) {
-	a.discoveryMutex.Lock()
-	wasDiscovered := a.toolsDiscovered
-	a.toolsDiscovered = true
-	a.discoveryMutex.Unlock()
-
-	if !wasDiscovered {
-		logging.Info("WorkflowAdapter", "Initial tool discovery complete: %d tools available", len(event.Tools))
-	} else {
-		logging.Debug("WorkflowAdapter", "Tool update received: %d tools available", len(event.Tools))
-	}
+	logging.Debug("WorkflowAdapter", "Registered workflow adapter with API layer")
 }
 
 // ExecuteWorkflow executes a workflow and returns MCP result
@@ -101,9 +81,7 @@ func (a *Adapter) ExecuteWorkflow(ctx context.Context, workflowName string, args
 	workflow := a.convertCRDToWorkflow(workflowCRD)
 
 	// Check if workflow is available before execution
-	missingTools := a.getMissingTools(workflow)
-	if len(missingTools) > 0 {
-		errorResponse := a.buildToolAvailabilityError(workflowName, missingTools)
+	if !a.isWorkflowAvailable(workflow) {
 		// Generate workflow unavailable event with missing tools
 		missingTools := a.findMissingTools(workflow)
 		a.generateCRDEvent(workflowName, events.ReasonWorkflowUnavailable, events.EventData{
@@ -112,7 +90,7 @@ func (a *Adapter) ExecuteWorkflow(ctx context.Context, workflowName string, args
 		})
 
 		return &api.CallToolResult{
-			Content: []interface{}{errorResponse},
+			Content: []interface{}{fmt.Sprintf("workflow %s is not available (missing required tools)", workflowName)},
 			IsError: true,
 		}, nil
 	}
@@ -584,10 +562,6 @@ func (a *Adapter) convertWorkflowSteps(crdSteps []musterv1alpha1.WorkflowStep) [
 			step.Condition = a.convertWorkflowCondition(crdStep.Condition)
 		}
 
-		if crdStep.ForEach != nil {
-			step.ForEach = a.convertForEachConfig(crdStep.ForEach)
-		}
-
 		steps = append(steps, step)
 	}
 	return steps
@@ -611,51 +585,9 @@ func (a *Adapter) convertWorkflowStepsToCRD(steps []api.WorkflowStep) []musterv1
 			crdStep.Condition = a.convertWorkflowConditionToCRD(step.Condition)
 		}
 
-		if step.ForEach != nil {
-			crdStep.ForEach = a.convertForEachConfigToCRD(step.ForEach)
-		}
-
 		crdSteps = append(crdSteps, crdStep)
 	}
 	return crdSteps
-}
-
-// convertForEachConfig converts CRD ForEachConfig to internal format
-func (a *Adapter) convertForEachConfig(crdForEach *musterv1alpha1.ForEachConfig) *api.ForEachConfig {
-	if crdForEach == nil {
-		return nil
-	}
-
-	return &api.ForEachConfig{
-		Items: a.convertRawExtension(crdForEach.Items),
-		Step: api.WorkflowStepTemplate{
-			ID:           crdForEach.Step.ID,
-			Tool:         crdForEach.Step.Tool,
-			Args:         a.convertRawExtensionMap(crdForEach.Step.Args),
-			AllowFailure: crdForEach.Step.AllowFailure,
-			Store:        crdForEach.Step.Store,
-			Description:  crdForEach.Step.Description,
-		},
-	}
-}
-
-// convertForEachConfigToCRD converts internal ForEachConfig to CRD format
-func (a *Adapter) convertForEachConfigToCRD(forEach *api.ForEachConfig) *musterv1alpha1.ForEachConfig {
-	if forEach == nil {
-		return nil
-	}
-
-	return &musterv1alpha1.ForEachConfig{
-		Items: a.convertToRawExtension(forEach.Items),
-		Step: musterv1alpha1.WorkflowStepTemplate{
-			ID:           forEach.Step.ID,
-			Tool:         forEach.Step.Tool,
-			Args:         a.convertToRawExtensionMap(forEach.Step.Args),
-			AllowFailure: forEach.Step.AllowFailure,
-			Store:        forEach.Step.Store,
-			Description:  forEach.Step.Description,
-		},
-	}
 }
 
 // convertWorkflowCondition converts CRD WorkflowCondition to internal format
@@ -792,115 +724,26 @@ func (a *Adapter) convertToRawExtensionMap(valueMap map[string]interface{}) map[
 
 // isWorkflowAvailable checks if a workflow has all required tools available
 func (a *Adapter) isWorkflowAvailable(workflow *api.Workflow) bool {
-	// During startup before tools are discovered, assume workflows are available
-	// This prevents false negatives when workflows are loaded before MCP servers connect
-	a.discoveryMutex.RLock()
-	toolsReady := a.toolsDiscovered
-	a.discoveryMutex.RUnlock()
-
-	if !toolsReady {
-		return true // Defer validation until after tool discovery
-	}
-
-	return len(a.getMissingTools(workflow)) == 0
-}
-
-// getMissingTools returns a list of tools that are required but not available
-func (a *Adapter) getMissingTools(workflow *api.Workflow) []string {
 	a.mu.RLock()
 	if a.generatingTools {
 		a.mu.RUnlock()
 		// If we're in the middle of generating tools, assume available to avoid circular dependency
-		return nil
+		return true
 	}
 	a.mu.RUnlock()
 
-	// During startup before tools are discovered, assume all tools are available
-	// This prevents false negatives when workflows are loaded before MCP servers connect
-	a.discoveryMutex.RLock()
-	toolsReady := a.toolsDiscovered
-	a.discoveryMutex.RUnlock()
-
-	if !toolsReady {
-		return nil // Defer validation until after tool discovery
-	}
-
 	if a.toolChecker == nil {
-		return nil // Assume available if no tool checker
+		return true // Assume available if no tool checker
 	}
-
-	var missingTools []string
 
 	// Check each step's tool availability
 	for _, step := range workflow.Steps {
-		// Regular step with direct tool
-		if step.Tool != "" {
-			if !a.toolChecker.IsToolAvailable(step.Tool) {
-				missingTools = append(missingTools, step.Tool)
-			}
-		}
-
-		// forEach step - check the tool in the forEach template
-		if step.ForEach != nil && step.ForEach.Step.Tool != "" {
-			if !a.toolChecker.IsToolAvailable(step.ForEach.Step.Tool) {
-				missingTools = append(missingTools, step.ForEach.Step.Tool)
-			}
+		if !a.toolChecker.IsToolAvailable(step.Tool) {
+			return false
 		}
 	}
 
-	return missingTools
-}
-
-// buildToolAvailabilityError creates a detailed JSON error response showing missing tools and all available tools
-func (a *Adapter) buildToolAvailabilityError(workflowName string, missingTools []string) string {
-	// Get all available tools from aggregator
-	var availableTools []string
-	if aggregator := api.GetAggregator(); aggregator != nil {
-		availableTools = aggregator.GetAvailableTools()
-	}
-
-	// Group tools by category (core_, x_, workflow_)
-	toolsByCategory := map[string][]string{
-		"core":     []string{},
-		"external": []string{},
-		"workflow": []string{},
-		"other":    []string{},
-	}
-
-	for _, tool := range availableTools {
-		if strings.HasPrefix(tool, "core_") {
-			toolsByCategory["core"] = append(toolsByCategory["core"], tool)
-		} else if strings.HasPrefix(tool, "x_") {
-			toolsByCategory["external"] = append(toolsByCategory["external"], tool)
-		} else if strings.HasPrefix(tool, "workflow_") {
-			toolsByCategory["workflow"] = append(toolsByCategory["workflow"], tool)
-		} else {
-			toolsByCategory["other"] = append(toolsByCategory["other"], tool)
-		}
-	}
-
-	// Build error response
-	errorData := map[string]interface{}{
-		"error":         fmt.Sprintf("workflow '%s' is not available", workflowName),
-		"missing_tools": missingTools,
-		"available_tools": map[string]interface{}{
-			"core_tools":    toolsByCategory["core"],
-			"external_mcps": toolsByCategory["external"],
-			"workflows":     toolsByCategory["workflow"],
-			"other":         toolsByCategory["other"],
-			"total_count":   len(availableTools),
-		},
-		"hint": "Check if the required MCP servers are running and registered",
-	}
-
-	// Marshal to JSON
-	jsonData, err := json.MarshalIndent(errorData, "", "  ")
-	if err != nil {
-		// Fallback to simple error message
-		return fmt.Sprintf("workflow %s is not available (missing required tools: %s)", workflowName, strings.Join(missingTools, ", "))
-	}
-
-	return string(jsonData)
+	return true
 }
 
 // findMissingTools returns a list of tools that are not available for a workflow
@@ -1237,9 +1080,8 @@ func (a *Adapter) ExecuteTool(ctx context.Context, toolName string, args map[str
 		return a.handleExecutionList(ctx, args)
 	case toolName == "workflow_execution_get":
 		return a.handleExecutionGet(ctx, args)
-	// TODO: Re-enable when text transformation is fully implemented
-	// case toolName == "workflow_transform_text":
-	// 	return a.handleTransformText(args)
+	case toolName == "workflow_transform_text":
+		return a.handleTransformText(args)
 
 	case strings.HasPrefix(toolName, "action_"):
 		// Execute workflow
@@ -1344,13 +1186,61 @@ func (a *Adapter) handleGet(args map[string]interface{}) (*api.CallToolResult, e
 	}, nil
 }
 
-// TODO: Re-implement text transformation when ready
-// func (a *Adapter) handleTransformText(args map[string]interface{}) (*api.CallToolResult, error) {
-// 	return &api.CallToolResult{
-// 		Content: []interface{}{"Text transformation not yet implemented"},
-// 		IsError: true,
-// 	}, nil
-// }
+func (a *Adapter) handleTransformText(args map[string]interface{}) (*api.CallToolResult, error) {
+	// Validate input
+	input, ok := args["input"].(string)
+	if !ok {
+		return &api.CallToolResult{
+			Content: []interface{}{"input is required and must be a string"},
+			IsError: true,
+		}, nil
+	}
+
+	// Validate steps
+	stepsRaw, ok := args["steps"]
+	if !ok {
+		return &api.CallToolResult{
+			Content: []interface{}{"steps is required"},
+			IsError: true,
+		}, nil
+	}
+
+	// Convert steps to TransformationStep array
+	var steps []TransformationStep
+	stepsJSON, err := json.Marshal(stepsRaw)
+	if err != nil {
+		return &api.CallToolResult{
+			Content: []interface{}{fmt.Sprintf("Failed to parse steps: %v", err)},
+			IsError: true,
+		}, nil
+	}
+
+	if err := json.Unmarshal(stepsJSON, &steps); err != nil {
+		return &api.CallToolResult{
+			Content: []interface{}{fmt.Sprintf("Failed to unmarshal steps: %v", err)},
+			IsError: true,
+		}, nil
+	}
+
+	// Create transformer and execute
+	transformer := NewTextTransformer()
+	result, err := transformer.Transform(TransformRequest{
+		Input: input,
+		Steps: steps,
+	})
+
+	if err != nil {
+		return &api.CallToolResult{
+			Content: []interface{}{fmt.Sprintf("Transformation failed: %v", err)},
+			IsError: true,
+		}, nil
+	}
+
+	return &api.CallToolResult{
+		Content: []interface{}{result.Result},
+		IsError: false,
+	}, nil
+}
 
 func (a *Adapter) handleCreate(args map[string]interface{}) (*api.CallToolResult, error) {
 	var req api.WorkflowCreateRequest
@@ -2024,51 +1914,8 @@ func getWorkflowStepsSchema() map[string]interface{} {
 					"type":        "string",
 					"description": "Human-readable documentation for this step's purpose",
 				},
-				"forEach": map[string]interface{}{
-					"type":                 "object",
-					"description":          "Enables iteration over a collection, executing the step template for each item",
-					"additionalProperties": false,
-					"properties": map[string]interface{}{
-						"items": map[string]interface{}{
-							"description": "Collection to iterate over (can be a template expression like {{.microservices}} or direct array)",
-						},
-						"step": map[string]interface{}{
-							"type":                 "object",
-							"description":          "Step template to execute for each item (current item available as {{.item}})",
-							"additionalProperties": false,
-							"properties": map[string]interface{}{
-								"id": map[string]interface{}{
-									"type":        "string",
-									"description": "Unique identifier for this step template (will be expanded with iteration index)",
-								},
-								"tool": map[string]interface{}{
-									"type":        "string",
-									"description": "Name of the tool to execute for each iteration",
-								},
-								"args": map[string]interface{}{
-									"type":        "object",
-									"description": "Arguments for each iteration (can reference {{.item}} or {{.item.field}})",
-								},
-								"allow_failure": map[string]interface{}{
-									"type":        "boolean",
-									"description": "Whether a single iteration is allowed to fail",
-								},
-								"store": map[string]interface{}{
-									"type":        "boolean",
-									"description": "Whether each iteration's result should be stored",
-								},
-								"description": map[string]interface{}{
-									"type":        "string",
-									"description": "Human-readable documentation for the step template",
-								},
-							},
-							"required": []string{"id", "tool"},
-						},
-					},
-					"required": []string{"items", "step"},
-				},
 			},
-			"required": []string{"id"},
+			"required": []string{"id", "tool"},
 		},
 		"minItems": 1,
 	}
@@ -2078,33 +1925,384 @@ func getWorkflowStepsSchema() map[string]interface{} {
 func getTextTransformStepsSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "array",
-		"description": "Array of text transformation steps to apply sequentially. Each step transforms the output of the previous step.",
+		"description": "Array of text transformation steps to apply sequentially. Each step transforms the output of the previous step. Pipeline-based text processing for converting unstructured text into structured data.",
 		"items": map[string]interface{}{
-			"type":                 "object",
-			"description":          "Individual transformation step configuration",
-			"additionalProperties": false,
-			"properties": map[string]interface{}{
-				"type": map[string]interface{}{
-					"type":        "string",
-					"description": "Type of transformation to apply",
-					"enum": []string{
-						// Extraction operations
-						"extract_lines_starting_with", "extract_lines_matching", "extract_between", "extract_after", "extract_before",
-						// Modification operations
-						"replace", "replace_regex", "trim", "trim_prefix", "trim_suffix", "trim_each", "to_lower", "to_upper",
-						// Splitting/filtering operations
-						"split", "split_lines", "remove_empty", "remove_duplicates",
+			"type":        "object",
+			"description": "Individual transformation step configuration",
+			"oneOf": []map[string]interface{}{
+				// ============================================================================
+				// EXTRACTION OPERATIONS (string → string or array)
+				// ============================================================================
+				{
+					"description":          "Extract lines that start with a specific prefix. Input: string → Output: array. Example: Extract markdown bullet points starting with '- '.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_lines_starting_with",
+							"description": "Extracts lines that start with a specific prefix",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"prefix"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"prefix": map[string]interface{}{
+									"type":        "string",
+									"description": "The prefix to match at the start of lines (e.g., '- ' for markdown lists, 'ERROR:' for error lines)",
+								},
+							},
+						},
 					},
+					"required": []string{"type", "args"},
 				},
-				"args": map[string]interface{}{
-					"type":        "object",
-					"description": "Arguments for the transformation step (depends on type)",
-					"additionalProperties": map[string]interface{}{
-						"description": "Transformation-specific argument value",
+				{
+					"description":          "Extract lines matching a regular expression pattern. Input: string → Output: array. Example: Extract lines matching '^[0-9]+\\.' for numbered lists.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_lines_matching",
+							"description": "Extracts lines matching a regex pattern",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"pattern"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"pattern": map[string]interface{}{
+									"type":        "string",
+									"description": "Regular expression pattern to match lines (e.g., '^ERROR:', '^[a-zA-Z0-9_-]+:')",
+								},
+							},
+						},
 					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Extract text between two marker strings. Input: string → Output: string. Example: Extract content between '[START]' and '[END]' markers.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_between",
+							"description": "Extracts text between two markers",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"start", "end"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"start": map[string]interface{}{
+									"type":        "string",
+									"description": "Start marker string (content after this marker will be included)",
+								},
+								"end": map[string]interface{}{
+									"type":        "string",
+									"description": "End marker string (content before this marker will be included)",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Extract all text after a marker string. Input: string → Output: string. Example: Extract content after 'Results:' header.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_after",
+							"description": "Extracts all text after a marker",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"marker"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"marker": map[string]interface{}{
+									"type":        "string",
+									"description": "Marker string to search for (returns all text after this marker)",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Extract all text before a marker string. Input: string → Output: string. Example: Extract content before '---' separator.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "extract_before",
+							"description": "Extracts all text before a marker",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"marker"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"marker": map[string]interface{}{
+									"type":        "string",
+									"description": "Marker string to search for (returns all text before this marker)",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				// ============================================================================
+				// MODIFICATION OPERATIONS (string|array → same type)
+				// ============================================================================
+				{
+					"description":          "Simple string replacement (replaces all occurrences). Input: string or array → Output: same type. Example: Replace ' and ' with ', ' to change separators.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "replace",
+							"description": "Performs simple string replacement",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"old"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"old": map[string]interface{}{
+									"type":        "string",
+									"description": "String to find and replace",
+								},
+								"new": map[string]interface{}{
+									"type":        "string",
+									"description": "String to replace with (optional, defaults to empty string for removal)",
+									"default":     "",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Regex-based replacement (supports capture groups). Input: string or array → Output: same type. Example: Replace '\\s+' with ' ' to normalize whitespace.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "replace_regex",
+							"description": "Performs regex-based replacement",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"pattern"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"pattern": map[string]interface{}{
+									"type":        "string",
+									"description": "Regular expression pattern to match (e.g., '\\s+', ':.*$', '^[0-9]+\\.')",
+								},
+								"replacement": map[string]interface{}{
+									"type":        "string",
+									"description": "Replacement string (optional, defaults to empty string for removal)",
+									"default":     "",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Remove leading and trailing whitespace. Input: string or array → Output: same type. Works on each element if input is array.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "trim",
+							"description": "Removes leading and trailing whitespace",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Remove specific prefix from text. Input: string or array → Output: same type. Example: Remove '- ' from markdown list items.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "trim_prefix",
+							"description": "Removes a specific prefix from text",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"prefix"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"prefix": map[string]interface{}{
+									"type":        "string",
+									"description": "Prefix to remove from the beginning of strings (e.g., '- ', '• ', 'Item: ')",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Remove specific suffix from text. Input: string or array → Output: same type. Example: Remove '.txt' from filenames.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "trim_suffix",
+							"description": "Removes a specific suffix from text",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"required":             []string{"suffix"},
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"suffix": map[string]interface{}{
+									"type":        "string",
+									"description": "Suffix to remove from the end of strings (e.g., '.txt', '.log', ':')",
+								},
+							},
+						},
+					},
+					"required": []string{"type", "args"},
+				},
+				{
+					"description":          "Trim whitespace from each array element. Input: array → Output: array. Use this after split operations to clean up items.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "trim_each",
+							"description": "Trims whitespace from each array element",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Convert text to lowercase. Input: string or array → Output: same type. Useful for case-insensitive comparisons.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "to_lower",
+							"description": "Converts text to lowercase",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Convert text to uppercase. Input: string or array → Output: same type. Useful for normalization.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "to_upper",
+							"description": "Converts text to uppercase",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				// ============================================================================
+				// SPLITTING/FILTERING OPERATIONS
+				// ============================================================================
+				{
+					"description":          "Split string by delimiter. Input: string → Output: array. Example: Split 'a,b,c' by ',' into ['a','b','c'].",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "split",
+							"description": "Splits a string by delimiter",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties": map[string]interface{}{
+								"delimiter": map[string]interface{}{
+									"type":        "string",
+									"description": "Delimiter to split on (default: ',')",
+									"default":     ",",
+								},
+							},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Split string by newlines. Input: string → Output: array. Commonly used as first step to process multi-line output.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "split_lines",
+							"description": "Splits text by newlines",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Remove empty strings from array. Input: array → Output: array. Use after split operations to clean up empty elements.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "remove_empty",
+							"description": "Removes empty strings from array",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
+				},
+				{
+					"description":          "Remove duplicate strings from array. Input: array → Output: array. Preserves first occurrence order.",
+					"additionalProperties": false,
+					"properties": map[string]interface{}{
+						"type": map[string]interface{}{
+							"type":        "string",
+							"const":       "remove_duplicates",
+							"description": "Removes duplicate strings from array",
+						},
+						"args": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"properties":           map[string]interface{}{},
+						},
+					},
+					"required": []string{"type"},
 				},
 			},
-			"required": []string{"type"},
 		},
 		"minItems": 1,
 	}
@@ -2212,5 +2410,3 @@ func getBoolFromMap(data map[string]interface{}, key string) bool {
 	}
 	return false
 }
-
-// getTextTransformStepsSchema returns the detailed schema definition for text transformation steps
