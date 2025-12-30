@@ -203,8 +203,9 @@ func (r *WorkflowReconciler) validateWorkflow(wf *api.Workflow) error {
 		}
 		stepIDs[step.ID] = true
 
-		if step.Tool == "" {
-			return fmt.Errorf("step '%s': tool is required", step.ID)
+		// Tool is required unless forEach is specified
+		if step.Tool == "" && step.ForEach == nil {
+			return fmt.Errorf("step '%s': tool is required (unless forEach is specified)", step.ID)
 		}
 	}
 

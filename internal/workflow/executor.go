@@ -91,23 +91,181 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 	}
 	logging.Debug("WorkflowExecutor", "Initial execution context: input=%+v, results=%+v", execCtx.input, execCtx.results)
 
-	// Expand forEach steps before execution
-	expandedSteps, err := we.expandForEachSteps(workflow.Steps, execCtx)
-	if err != nil {
-		logging.Error("WorkflowExecutor", err, "Failed to expand forEach steps")
-		return nil, fmt.Errorf("failed to expand forEach steps: %w", err)
-	}
-	logging.Info("WorkflowExecutor", "Expanded %d steps to %d steps for workflow %s", len(workflow.Steps), len(expandedSteps), workflow.Name)
-	
-	// Log each expanded step for debugging
-	for i, step := range expandedSteps {
-		logging.Debug("WorkflowExecutor", "Step %d: ID=%s, Tool=%s, ForEach=%v", i, step.ID, step.Tool, step.ForEach != nil)
-	}
-
-	// Execute each step
+	// Execute each step (forEach expansion happens dynamically during execution)
 	var lastStepResult *mcp.CallToolResult
-	for i, step := range expandedSteps {
-		logging.Debug("WorkflowExecutor", "Executing step %d/%d: %s, tool: %s", i+1, len(expandedSteps), step.ID, step.Tool)
+	for i, step := range workflow.Steps {
+		logging.Debug("WorkflowExecutor", "Executing step %d/%d: %s, tool: %s, hasForEach: %v", i+1, len(workflow.Steps), step.ID, step.Tool, step.ForEach != nil)
+
+		// If step has forEach, expand it dynamically now that previous steps have executed
+		if step.ForEach != nil {
+			logging.Info("WorkflowExecutor", "Step %s has forEach, expanding dynamically...", step.ID)
+
+			// Expand this forEach step based on current execution context
+			forEachSteps, err := we.expandForEachStep(step, execCtx)
+			if err != nil {
+				logging.Error("WorkflowExecutor", err, "Failed to expand forEach step %s", step.ID)
+				return nil, fmt.Errorf("failed to expand forEach step %s: %w", step.ID, err)
+			}
+
+			logging.Info("WorkflowExecutor", "ForEach step %s expanded to %d iterations", step.ID, len(forEachSteps))
+
+			// Execute each forEach iteration inline (same logic as regular steps below)
+			for idx, forEachStep := range forEachSteps {
+				logging.Debug("WorkflowExecutor", "Executing forEach iteration %d/%d: %s (tool: %s)", idx+1, len(forEachSteps), forEachStep.ID, forEachStep.Tool)
+
+				// Resolve template variables in step arguments (already resolved during expansion, but kept for consistency)
+				resolvedArgs := forEachStep.Args
+				logging.Debug("WorkflowExecutor", "ForEach step %s resolved args: %+v", forEachStep.ID, resolvedArgs)
+
+				// Generate step started event
+				we.eventCallback.GenerateStepEvent(workflow.Name, forEachStep.ID, "step_started", map[string]interface{}{
+					"tool": forEachStep.Tool,
+				})
+
+				// Execute the tool
+				result, err := we.toolCaller.CallToolInternal(ctx, forEachStep.Tool, resolvedArgs)
+				if err != nil {
+					logging.Error("WorkflowExecutor", err, "ForEach step %s failed", forEachStep.ID)
+
+					// Generate step failed event
+					we.eventCallback.GenerateStepEvent(workflow.Name, forEachStep.ID, "step_failed", map[string]interface{}{
+						"tool":          forEachStep.Tool,
+						"error":         err.Error(),
+						"allow_failure": forEachStep.AllowFailure,
+					})
+
+					// Record the failed step metadata
+					execCtx.stepMetadata = append(execCtx.stepMetadata, stepMetadata{
+						ID:           forEachStep.ID,
+						Tool:         forEachStep.Tool,
+						Store:        forEachStep.Store,
+						Status:       "failed",
+						AllowFailure: forEachStep.AllowFailure,
+						ResolvedArgs: resolvedArgs,
+					})
+
+					// If step allows failure, continue execution
+					if forEachStep.AllowFailure {
+						logging.Debug("WorkflowExecutor", "ForEach step %s failed but allow_failure is true, continuing execution", forEachStep.ID)
+
+						// Store the error result for subsequent steps to reference
+						if forEachStep.Store {
+							errorResult := map[string]interface{}{
+								"error":   err.Error(),
+								"success": false,
+								"isError": true,
+							}
+							execCtx.results[forEachStep.ID] = errorResult
+							logging.Debug("WorkflowExecutor", "Stored error result from forEach step %s: %+v", forEachStep.ID, errorResult)
+						}
+
+						// Continue to next forEach iteration
+						continue
+					}
+
+					// ForEach step failed and doesn't allow failure - fail the entire workflow
+					return nil, fmt.Errorf("forEach iteration %s failed: %w", forEachStep.ID, err)
+				}
+
+				logging.Debug("WorkflowExecutor", "ForEach step %s result: %+v", forEachStep.ID, result)
+				lastStepResult = result
+
+				// Store result if requested
+				if forEachStep.Store {
+					logging.Debug("WorkflowExecutor", "Processing result for forEach step %s: %+v", forEachStep.ID, result)
+					var resultData interface{}
+					if len(result.Content) > 0 {
+						logging.Debug("WorkflowExecutor", "Result content[0]: %+v (type: %T)", result.Content[0], result.Content[0])
+						// Check if it's a TextContent
+						if textContent, ok := result.Content[0].(mcp.TextContent); ok {
+							logging.Debug("WorkflowExecutor", "TextContent.Text: %s", textContent.Text)
+							// Try to parse as JSON first
+							if err := json.Unmarshal([]byte(textContent.Text), &resultData); err != nil {
+								logging.Debug("WorkflowExecutor", "Failed to parse as JSON: %v, storing as string", err)
+								// If not JSON, store as string
+								resultData = textContent.Text
+							} else {
+								logging.Debug("WorkflowExecutor", "Successfully parsed JSON: %+v", resultData)
+							}
+						} else {
+							// Content is not TextContent, store it directly (e.g., arrays from transform_text)
+							logging.Debug("WorkflowExecutor", "Content is not TextContent, storing directly as %T", result.Content[0])
+							resultData = result.Content[0]
+						}
+					}
+					execCtx.results[forEachStep.ID] = resultData
+					logging.Debug("WorkflowExecutor", "Stored result from forEach step %s: %+v", forEachStep.ID, resultData)
+				}
+
+				// Generate step completed event
+				we.eventCallback.GenerateStepEvent(workflow.Name, forEachStep.ID, "step_completed", map[string]interface{}{
+					"tool": forEachStep.Tool,
+				})
+
+				// Record step metadata for execution tracking
+				execCtx.stepMetadata = append(execCtx.stepMetadata, stepMetadata{
+					ID:           forEachStep.ID,
+					Tool:         forEachStep.Tool,
+					Store:        forEachStep.Store,
+					Status:       "completed",
+					AllowFailure: forEachStep.AllowFailure,
+					ResolvedArgs: resolvedArgs,
+				})
+
+				// Check if result indicates an error
+				if result.IsError {
+					logging.Error("WorkflowExecutor", fmt.Errorf("step returned error"), "ForEach step %s returned error result", forEachStep.ID)
+
+					// Generate step failed event for error result case
+					we.eventCallback.GenerateStepEvent(workflow.Name, forEachStep.ID, "step_failed", map[string]interface{}{
+						"tool":          forEachStep.Tool,
+						"error":         "step returned error result",
+						"allow_failure": forEachStep.AllowFailure,
+					})
+
+					// If step allows failure, treat as a normal step failure and continue
+					if forEachStep.AllowFailure {
+						logging.Debug("WorkflowExecutor", "ForEach step %s returned error result but allow_failure is true, continuing execution", forEachStep.ID)
+
+						// Update the step metadata status to failed
+						if len(execCtx.stepMetadata) > 0 {
+							execCtx.stepMetadata[len(execCtx.stepMetadata)-1].Status = "failed"
+						}
+
+						// Store error result if step.Store is true
+						if forEachStep.Store {
+							// Create a structured error result
+							var errorMessage string
+							if len(result.Content) > 0 {
+								if textContent, ok := result.Content[0].(mcp.TextContent); ok {
+									errorMessage = textContent.Text
+								}
+							}
+
+							errorResult := map[string]interface{}{
+								"success": false,
+								"isError": true,
+								"error":   errorMessage,
+							}
+							execCtx.results[forEachStep.ID] = errorResult
+							logging.Debug("WorkflowExecutor", "Stored error result from failed forEach step %s: %+v", forEachStep.ID, errorResult)
+						}
+
+						// Continue to next forEach iteration
+						continue
+					}
+
+					// ForEach step returned error and doesn't allow failure - return the error result
+					return result, nil
+				}
+			}
+
+			// Continue to next step
+			continue
+		}
+
+		// Regular step execution (not forEach)
+		logging.Debug("WorkflowExecutor", "Executing regular step: %s, tool: %s", step.ID, step.Tool)
 
 		// Check if step has a condition
 		var conditionEvaluation *bool
@@ -450,6 +608,10 @@ func (we *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflow *api.W
 					} else {
 						logging.Debug("WorkflowExecutor", "Successfully parsed JSON: %+v", resultData)
 					}
+				} else {
+					// Content is not TextContent, store it directly (e.g., arrays from transform_text)
+					logging.Debug("WorkflowExecutor", "Content is not TextContent, storing directly as %T", result.Content[0])
+					resultData = result.Content[0]
 				}
 			}
 			execCtx.results[step.ID] = resultData
@@ -718,6 +880,67 @@ func (we *WorkflowExecutor) resolveArguments(args map[string]interface{}, ctx *e
 	return resolved, nil
 }
 
+// expandForEachStep expands a single forEach step based on the current execution context
+// This is called dynamically during execution when we encounter a forEach step
+func (we *WorkflowExecutor) expandForEachStep(step api.WorkflowStep, execCtx *executionContext) ([]api.WorkflowStep, error) {
+	if step.ForEach == nil {
+		return nil, fmt.Errorf("step %s has no forEach configuration", step.ID)
+	}
+
+	logging.Debug("WorkflowExecutor", "Expanding single forEach step: %s", step.ID)
+
+	// Resolve the items collection using current execution context
+	items, err := we.resolveForEachItems(step.ForEach.Items, execCtx)
+	if err != nil {
+		logging.Error("WorkflowExecutor", err, "Failed to resolve forEach items for step %s", step.ID)
+		return nil, fmt.Errorf("failed to resolve forEach items for step %s: %w", step.ID, err)
+	}
+
+	// Validate that items is an array
+	itemsArray, ok := items.([]interface{})
+	if !ok {
+		logging.Error("WorkflowExecutor", nil, "ForEach items for step %s must be an array, got %T: %v", step.ID, items, items)
+		return nil, fmt.Errorf("forEach items for step %s must be an array, got %T", step.ID, items)
+	}
+
+	logging.Info("WorkflowExecutor", "ForEach step %s resolving to %d iterations based on current context", step.ID, len(itemsArray))
+
+	var expandedSteps []api.WorkflowStep
+
+	// Create a step for each item
+	for idx, item := range itemsArray {
+		// Create a temporary execution context with the current item
+		itemCtx := &executionContext{
+			input:        execCtx.input,
+			variables:    execCtx.variables,
+			results:      execCtx.results,
+			templateVars: execCtx.templateVars,
+			stepMetadata: execCtx.stepMetadata,
+			item:         item, // Add current item to context
+		}
+
+		// Resolve arguments with item context
+		resolvedArgs, err := we.resolveArguments(step.ForEach.Step.Args, itemCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve forEach step args for %s[%d]: %w", step.ID, idx, err)
+		}
+
+		// Create expanded step
+		expandedStep := api.WorkflowStep{
+			ID:           fmt.Sprintf("%s_%d", step.ForEach.Step.ID, idx),
+			Tool:         step.ForEach.Step.Tool,
+			Args:         resolvedArgs,
+			Store:        step.ForEach.Step.Store,
+			AllowFailure: step.ForEach.Step.AllowFailure,
+			Description:  fmt.Sprintf("%s (item %d/%d)", step.ForEach.Step.Description, idx+1, len(itemsArray)),
+		}
+
+		expandedSteps = append(expandedSteps, expandedStep)
+		logging.Info("WorkflowExecutor", "Created forEach iteration step: %s (tool: %s)", expandedStep.ID, expandedStep.Tool)
+	}
+
+	return expandedSteps, nil
+}
 // resolveValue recursively resolves template variables in a value
 func (we *WorkflowExecutor) resolveValue(value interface{}, ctx *executionContext) (interface{}, error) {
 	switch v := value.(type) {
@@ -968,7 +1191,7 @@ func (we *WorkflowExecutor) expandForEachSteps(steps []api.WorkflowStep, execCtx
 
 	for i, step := range steps {
 		logging.Info("WorkflowExecutor", "Processing step %d: ID=%s, Tool=%s, HasForEach=%v", i, step.ID, step.Tool, step.ForEach != nil)
-		
+
 		// If step has no forEach, keep it as-is
 		if step.ForEach == nil {
 			logging.Info("WorkflowExecutor", "Step %s has no forEach, keeping as-is", step.ID)
