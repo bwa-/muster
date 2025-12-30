@@ -1,5 +1,6 @@
 /muster
 dist/
+tmp/
 .muster/config.yaml
 .muster/mcpservers/*.yaml
 .muster/events/*
