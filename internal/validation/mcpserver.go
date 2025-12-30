@@ -156,23 +156,10 @@ func (v *MCPServerValidator) validateSpec(result *ValidationResult, spec map[str
 		}
 	}
 
-	// Validate command (required for localCommand type)
+	// Validate command (required for localCommand type, should be a string - the executable)
 	if command, ok := spec["command"]; ok {
-		if err := validateType("spec.command", command, "array"); err != nil {
+		if err := validateType("spec.command", command, "string"); err != nil {
 			result.Errors = append(result.Errors, *err)
-		} else {
-			if err := validateMinItems("spec.command", command, 1); err != nil {
-				result.Errors = append(result.Errors, *err)
-			} else {
-				// Validate each command element is a string
-				if cmdArray, ok := command.([]interface{}); ok {
-					for i, item := range cmdArray {
-						if err := validateType(fmt.Sprintf("spec.command[%d]", i), item, "string"); err != nil {
-							result.Errors = append(result.Errors, *err)
-						}
-					}
-				}
-			}
 		}
 	} else {
 		// Command is required for localCommand type
@@ -182,6 +169,22 @@ func (v *MCPServerValidator) validateSpec(result *ValidationResult, spec map[str
 				Type:    ErrorTypeRequired,
 				Message: "command is required when type is \"localCommand\"",
 			})
+		}
+	}
+
+	// Validate args (optional, array of strings - command arguments)
+	if args, ok := spec["args"]; ok && args != nil {
+		if err := validateType("spec.args", args, "array"); err != nil {
+			result.Errors = append(result.Errors, *err)
+		} else {
+			// Validate each arg element is a string
+			if argsArray, ok := args.([]interface{}); ok {
+				for i, item := range argsArray {
+					if err := validateType(fmt.Sprintf("spec.args[%d]", i), item, "string"); err != nil {
+						result.Errors = append(result.Errors, *err)
+					}
+				}
+			}
 		}
 	}
 
@@ -214,7 +217,7 @@ func (v *MCPServerValidator) validateSpec(result *ValidationResult, spec map[str
 
 	// Check for unknown spec fields
 	v.checkUnknownFields(result, spec, []string{
-		"type", "autoStart", "toolPrefix", "command", "env", "description",
+		"type", "autoStart", "toolPrefix", "command", "args", "env", "description",
 	})
 }
 
