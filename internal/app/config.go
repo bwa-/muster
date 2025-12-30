@@ -48,6 +48,11 @@ type Config struct {
 	OAuthServerEnabled bool   // Enable OAuth 2.1 protection for Muster Server
 	OAuthServerBaseURL string // Base URL of the Muster Server for OAuth issuer
 
+	// NoKubernetes forces filesystem-only mode, disabling Kubernetes auto-detection.
+	// When true, muster will only use filesystem watching for configuration changes,
+	// even if Kubernetes cluster access is available.
+	NoKubernetes bool
+
 	// Version is the application version string (e.g., "0.0.68").
 	// Typically injected at build time via -ldflags.
 	Version string
@@ -116,5 +121,18 @@ func (c *Config) WithOAuth(enabled bool, publicURL, clientID string) *Config {
 func (c *Config) WithOAuthServer(enabled bool, baseURL string) *Config {
 	c.OAuthServerEnabled = enabled
 	c.OAuthServerBaseURL = baseURL
+	return c
+}
+
+// WithNoKubernetes disables Kubernetes auto-detection, forcing filesystem-only mode.
+// This is useful for local development or when you want to ensure all configuration
+// is loaded from the filesystem, even if Kubernetes cluster access is available.
+//
+// Args:
+//   - noKubernetes: when true, disables Kubernetes detection and forces filesystem mode
+//
+// Returns the modified Config for method chaining.
+func (c *Config) WithNoKubernetes(noKubernetes bool) *Config {
+	c.NoKubernetes = noKubernetes
 	return c
 }

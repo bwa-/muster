@@ -272,8 +272,15 @@ func InitializeServices(cfg *Config) (*Services, error) {
 	// Step 5: Initialize reconciliation manager for automatic change detection
 	var reconcileManager *reconciler.Manager
 	if cfg.ConfigPath != "" {
+		// Determine watch mode based on configuration
+		watchMode := reconciler.WatchModeAuto
+		if cfg.NoKubernetes {
+			// Force filesystem mode when --no-kubernetes is set
+			watchMode = reconciler.WatchModeFilesystem
+		}
+
 		reconcileConfig := reconciler.ManagerConfig{
-			Mode:           reconciler.WatchModeAuto,
+			Mode:           watchMode,
 			FilesystemPath: cfg.ConfigPath,
 			Namespace:      namespace,
 			WorkerCount:    2,

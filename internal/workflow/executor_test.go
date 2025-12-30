@@ -493,44 +493,44 @@ func TestWorkflowExecutor_ForEach_ErrorHandling(t *testing.T) {
 	// Verify result contains detailed error information
 	assert.True(t, result.IsError)
 	require.Len(t, result.Content, 1)
-	
+
 	textContent, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
-	
+
 	// Parse the JSON result
 	var resultData map[string]interface{}
 	jsonErr := json.Unmarshal([]byte(textContent.Text), &resultData)
 	require.NoError(t, jsonErr, "Should be valid JSON")
-	
+
 	// Verify the steps array contains error details
 	steps, ok := resultData["steps"].([]interface{})
 	require.True(t, ok, "Should have steps array")
 	require.Greater(t, len(steps), 0, "Should have at least one step")
-	
+
 	firstStep := steps[0].(map[string]interface{})
-	
+
 	// Check that tool name is not empty (the main fix we're testing)
 	tool, _ := firstStep["tool"].(string)
 	assert.NotEmpty(t, tool, "Tool name should not be empty in error response")
 	assert.Equal(t, "nonexistent_tool", tool, "Tool name should match the forEach step tool")
-	
+
 	// Check that error message is present and includes tool name
 	errorMsg, hasError := firstStep["error"].(string)
 	assert.True(t, hasError, "Should have error field")
 	assert.NotEmpty(t, errorMsg, "Error message should not be empty")
 	assert.Contains(t, errorMsg, "tool 'nonexistent_tool' is not available", "Error should clearly state tool is not available")
-	
+
 	// Check that available_tools is present to help user find correct name
 	availableTools, hasAvailableTools := firstStep["available_tools"].(map[string]interface{})
 	assert.True(t, hasAvailableTools, "Should have available_tools field")
-	
+
 	if hasAvailableTools {
 		// Verify structure has core, external, workflow categories
 		_, hasCore := availableTools["core"]
 		_, hasExternal := availableTools["external"]
 		_, hasWorkflow := availableTools["workflow"]
 		total, hasTotal := availableTools["total"]
-		
+
 		assert.True(t, hasCore, "Should have core tools category")
 		assert.True(t, hasExternal, "Should have external tools category")
 		assert.True(t, hasWorkflow, "Should have workflow tools category")

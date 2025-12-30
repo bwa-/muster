@@ -25,6 +25,9 @@ var serveYolo bool
 // The directory should contain config.yaml and subdirectories: mcpservers/, workflows/, serviceclasses/, services/
 var serveConfigPath string
 
+// serveNoKubernetes forces filesystem-only mode, disabling Kubernetes auto-detection
+var serveNoKubernetes bool
+
 // OAuth Proxy configuration flags (for authenticating to remote MCP servers - ADR 004)
 var (
 	// serveOAuthEnabled enables the OAuth proxy functionality for remote MCP servers
@@ -84,7 +87,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Create application configuration without cluster arguments
 	cfg := app.NewConfig(serveDebug, serveSilent, serveYolo, serveConfigPath, cmd.Root().Version).
 		WithOAuth(serveOAuthEnabled, serveOAuthPublicURL, serveOAuthClientID).
-		WithOAuthServer(serveOAuthServerEnabled, serveOAuthServerBaseURL)
+		WithOAuthServer(serveOAuthServerEnabled, serveOAuthServerBaseURL).
+		WithNoKubernetes(serveNoKubernetes)
 
 	// Create and initialize the application
 	application, err := app.NewApplication(cfg)
@@ -113,6 +117,7 @@ func init() {
 	// Config path flag with environment variable support
 	defaultConfigPath := config.GetConfigPathFromEnv(config.GetDefaultConfigPathOrPanic())
 	serveCmd.Flags().StringVar(&serveConfigPath, "config-path", defaultConfigPath, "Configuration directory (env: MUSTER_CONFIG_PATH)")
+	serveCmd.Flags().BoolVar(&serveNoKubernetes, "no-kubernetes", false, "Force filesystem-only mode, disable Kubernetes auto-detection")
 
 	// OAuth Proxy flags (for authenticating to remote MCP servers - ADR 004)
 	serveCmd.Flags().BoolVar(&serveOAuthEnabled, "oauth", false, "Enable OAuth proxy for remote MCP server authentication")
