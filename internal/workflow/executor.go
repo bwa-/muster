@@ -1070,20 +1070,30 @@ func (we *WorkflowExecutor) getOriginalValue(templateStr string, ctx *executionC
 	// Parse the path and get the value
 	if strings.HasPrefix(inner, ".input.") {
 		key := inner[7:] // Remove ".input."
-		return ctx.input[key]
+		val, err := we.getValueFromPath(ctx.input, key)
+		if err == nil {
+			return val
+		}
 	} else if strings.HasPrefix(inner, ".results.") {
 		key := inner[9:] // Remove ".results."
-		return ctx.results[key]
+		val, err := we.getValueFromPath(ctx.results, key)
+		if err == nil {
+			return val
+		}
 	} else if strings.HasPrefix(inner, ".vars.") {
 		key := inner[6:] // Remove ".vars."
-		return ctx.variables[key]
+		val, err := we.getValueFromPath(ctx.variables, key)
+		if err == nil {
+			return val
+		}
 	} else if inner == ".item" {
 		return ctx.item
 	} else if strings.HasPrefix(inner, ".item.") {
 		// Handle nested item properties like .item.name
 		key := inner[6:] // Remove ".item."
-		if itemMap, ok := ctx.item.(map[string]interface{}); ok {
-			return itemMap[key]
+		val, err := we.getValueFromPath(ctx.item, key)
+		if err == nil {
+			return val
 		}
 	}
 

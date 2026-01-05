@@ -95,6 +95,14 @@ type AggregatorHandler interface {
 	//   - []string: Slice of available tool names (empty if no tools available)
 	GetAvailableTools() []string
 
+	// GetAllTools returns the list of all tools available in the aggregator.
+	// This includes both tools from registered MCP servers (prefixed) and
+	// core muster tools.
+	//
+	// Returns:
+	//   - []mcp.Tool: List of all available tools
+	GetAllTools() []mcp.Tool
+
 	// UpdateCapabilities triggers a refresh of the aggregator's capability information.
 	// This should be called when MCP servers are added, removed, or their tools change.
 	UpdateCapabilities()

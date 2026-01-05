@@ -1375,6 +1375,27 @@ func (a *AggregatorServer) GetAvailableTools() []string {
 	return allToolNames
 }
 
+// GetAllTools returns the list of all tools available in the aggregator.
+//
+// This method aggregates tools from all registered servers (via registry)
+// and all core providers. It returns the complete list of tools that
+// are exposed to clients.
+//
+// Returns:
+//   - []mcp.Tool: List of all available tools
+func (a *AggregatorServer) GetAllTools() []mcp.Tool {
+	// 1. Get tools from external servers via registry (already prefixed)
+	tools := a.registry.GetAllTools()
+
+	// 2. Get core tools (need to be generated and prefixed)
+	coreServerTools := a.createToolsFromProviders()
+	for _, st := range coreServerTools {
+		tools = append(tools, st.Tool)
+	}
+
+	return tools
+}
+
 // UpdateCapabilities provides public access to capability updates for external components.
 //
 // This method exposes the internal updateCapabilities functionality to allow

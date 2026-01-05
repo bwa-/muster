@@ -145,6 +145,25 @@ func (a *APIAdapter) GetAvailableTools() []string {
 	return server.GetAvailableTools()
 }
 
+// GetAllTools returns the list of all tools available in the aggregator
+func (a *APIAdapter) GetAllTools() []mcp.Tool {
+	if a.service == nil {
+		return []mcp.Tool{}
+	}
+
+	manager := a.service.GetManager()
+	if manager == nil {
+		return []mcp.Tool{}
+	}
+
+	server := manager.GetAggregatorServer()
+	if server == nil {
+		return []mcp.Tool{}
+	}
+
+	return server.GetAllTools()
+}
+
 // UpdateCapabilities updates the aggregator's capabilities
 func (a *APIAdapter) UpdateCapabilities() {
 	if a.service == nil {

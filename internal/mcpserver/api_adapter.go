@@ -177,6 +177,10 @@ func (a *Adapter) GetTools() []api.ToolMetadata {
 			Description: "List all MCP server definitions with their status",
 		},
 		{
+			Name:        "mcpserver_list_tools",
+			Description: "List all available tools from all servers and core providers.",
+		},
+		{
 			Name:        "mcpserver_get",
 			Description: "Get detailed information about a specific MCP server definition",
 			Args: []api.ArgMetadata{
@@ -213,6 +217,8 @@ func (a *Adapter) ExecuteTool(ctx context.Context, toolName string, args map[str
 	switch toolName {
 	case "mcpserver_list":
 		return a.handleMCPServerList()
+	case "mcpserver_list_tools":
+		return a.handleMCPServerListTools(args)
 	case "mcpserver_get":
 		return a.handleMCPServerGet(args)
 	case "mcpserver_validate":
@@ -241,6 +247,23 @@ func (a *Adapter) handleMCPServerList() (*api.CallToolResult, error) {
 
 	return &api.CallToolResult{
 		Content: []interface{}{result},
+		IsError: false,
+	}, nil
+}
+
+func (a *Adapter) handleMCPServerListTools(args map[string]interface{}) (*api.CallToolResult, error) {
+	aggregator := api.GetAggregator()
+	if aggregator == nil {
+		return &api.CallToolResult{
+			Content: []interface{}{"Aggregator not available"},
+			IsError: true,
+		}, nil
+	}
+
+	// List all tools
+	tools := aggregator.GetAllTools()
+	return &api.CallToolResult{
+		Content: []interface{}{tools},
 		IsError: false,
 	}, nil
 }
